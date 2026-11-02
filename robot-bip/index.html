@@ -919,9 +919,22 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       const root = new T.Group(); scene.add(root);
       const bodyG = new T.Group(); root.add(bodyG);
 
-      // blue egg body
-      const body = new T.Mesh(new T.SphereGeometry(1, 48, 32), mat(BLUE));
-      body.scale.set(0.86, 0.8, 0.74); body.position.y = -1.5; bodyG.add(body);
+      // rounded box: a rounded-rectangle outline extruded with a round bevel on every edge
+      const roundedBox = (w, h, d, r) => {
+        const iw = w - 2 * r, ih = h - 2 * r, cr = Math.min(iw, ih) * 0.22;
+        const sh = new T.Shape(), x = -iw / 2, y = -ih / 2;
+        sh.moveTo(x + cr, y); sh.lineTo(x + iw - cr, y); sh.quadraticCurveTo(x + iw, y, x + iw, y + cr);
+        sh.lineTo(x + iw, y + ih - cr); sh.quadraticCurveTo(x + iw, y + ih, x + iw - cr, y + ih);
+        sh.lineTo(x + cr, y + ih); sh.quadraticCurveTo(x, y + ih, x, y + ih - cr);
+        sh.lineTo(x, y + cr); sh.quadraticCurveTo(x, y, x + cr, y);
+        const geo = new T.ExtrudeGeometry(sh, { depth: d - 2 * r, bevelEnabled: true, bevelThickness: r, bevelSize: r,
+                                                bevelSegments: 16, curveSegments: 24 });
+        geo.center(); return geo; // keep the extrude's own smooth normals
+      };
+
+      // blue box body with rounded corners
+      const body = new T.Mesh(roundedBox(1.7, 1.45, 1.1, 0.26), mat(BLUE));
+      body.position.y = -1.48; bodyG.add(body);
 
       // logo badge on the chest
       const bc = document.createElement('canvas'); bc.width = bc.height = 256;
@@ -943,7 +956,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       if (logoImg && !logoImg.complete) logoImg.addEventListener('load', () => { paintBadge(); badgeTex.needsUpdate = true; });
       const badge = new T.Mesh(new T.CircleGeometry(0.42, 64),
         new T.MeshStandardMaterial({ map: badgeTex, transparent: true, roughness: 0.5 }));
-      badge.position.set(0, -1.42, 0.745); badge.rotation.x = -0.08; bodyG.add(badge);
+      badge.position.set(0, -1.45, 0.556); bodyG.add(badge);
 
       // green legs and feet
       for (const sx of [-1, 1]) {
@@ -955,49 +968,32 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 
       // yellow arms, pivoting at the shoulders
       const mkArm = sx => {
-        const g = new T.Group(); g.position.set(sx * 0.8, -1.12, 0);
+        const g = new T.Group(); g.position.set(sx * 0.97, -0.98, 0);
         const up = new T.Mesh(new T.CapsuleGeometry(0.14, 0.42, 8, 16), mat(YEL)); up.position.y = -0.33; g.add(up);
         const hand = new T.Mesh(new T.SphereGeometry(0.22, 24, 16), mat(YEL2)); hand.position.y = -0.74; g.add(hand);
         bodyG.add(g); return g;
       };
       const armL = mkArm(-1), armR = mkArm(1);
 
-      // yellow sunshine head
-      const head = new T.Group(); head.position.y = 0.32; root.add(head);
-      const skullScale = new T.Vector3(1.18, 1, 1);
-      const skull = new T.Mesh(new T.SphereGeometry(1, 64, 48), mat(YEL)); skull.scale.copy(skullScale); head.add(skull);
-      // black face, drawn on a canvas each frame (eyes, mouth, blush)
+      // yellow rounded-box head
+      const head = new T.Group(); head.position.y = 0.38; root.add(head);
+      const skull = new T.Mesh(roundedBox(2.4, 1.8, 1.5, 0.34), mat(YEL)); head.add(skull);
+      // black face screen, drawn on a canvas each frame (eyes, mouth, blush)
       const fc = document.createElement('canvas'); fc.width = 640; fc.height = 380;
       const fctx = fc.getContext('2d');
       const faceTex = new T.CanvasTexture(fc); faceTex.colorSpace = T.SRGBColorSpace;
-      const face = new T.Mesh(
-        new T.SphereGeometry(1.012, 64, 32, Math.PI / 2 - 0.84, 1.68, Math.PI / 2 - 0.5, 1.02),
+      const face = new T.Mesh(new T.PlaneGeometry(1.95, 1.16),
         new T.MeshStandardMaterial({ map: faceTex, transparent: true, roughness: 0.18, metalness: 0.1,
                                      emissive: 0xffffff, emissiveMap: faceTex, emissiveIntensity: 0.55 }));
-      face.scale.copy(skullScale); head.add(face);
-      // sun petals ring
-      const petals = new T.Group(); petals.position.z = -0.3; head.add(petals);
-      const petalList = [];
-      for (let i = 0; i < 14; i++) {
-        const a = i * Math.PI * 2 / 14;
-        const pm = new T.Mesh(new T.SphereGeometry(1, 20, 12), mat(i % 2 ? YEL2 : YEL));
-        pm.scale.set(0.17, 0.27, 0.12);
-        pm.position.set(Math.sin(a) * 1.36, Math.cos(a) * 1.2, 0); pm.rotation.z = -a;
-        pm.userData.a = a; petals.add(pm); petalList.push(pm);
-      }
-      // star antenna
-      const ant = new T.Group(); ant.position.y = 0.92; head.add(ant);
-      const stalk = new T.Mesh(new T.CylinderGeometry(0.035, 0.05, 0.42, 12), mat(YEL2)); stalk.position.y = 0.21; ant.add(stalk);
-      const shape = new T.Shape();
-      for (let i = 0; i < 10; i++) {
-        const a = Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 0.11 : 0.24;
-        const x = Math.cos(a) * r, y = Math.sin(a) * r;
-        i ? shape.lineTo(x, y) : shape.moveTo(x, y);
-      }
-      const starGeo = new T.ExtrudeGeometry(shape, { depth: 0.08, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.03, bevelSegments: 3 });
-      starGeo.center();
-      const starMat = new T.MeshStandardMaterial({ color: YEL, roughness: 0.3, emissive: 0xffb000, emissiveIntensity: 0.3 });
-      const star = new T.Mesh(starGeo, starMat); star.position.y = 0.6; ant.add(star);
+      face.position.set(0, -0.02, 0.756); head.add(face);
+      // two antennae with round tips
+      const tipMat = new T.MeshStandardMaterial({ color: YEL2, roughness: 0.3, emissive: 0xffb000, emissiveIntensity: 0.3 });
+      const ants = [-1, 1].map(sx => {
+        const a = new T.Group(); a.position.set(sx * 0.62, 0.86, 0); a.rotation.z = -sx * 0.28; head.add(a);
+        const stalk = new T.Mesh(new T.CylinderGeometry(0.04, 0.06, 0.5, 12), mat(YEL2)); stalk.position.y = 0.25; a.add(stalk);
+        const tip = new T.Mesh(new T.SphereGeometry(0.13, 24, 16), tipMat); tip.position.y = 0.56; a.add(tip);
+        a.userData.base = -sx * 0.28; a.userData.sx = sx; return a;
+      });
 
       // soft ground shadow
       const sc = document.createElement('canvas'); sc.width = sc.height = 128;
@@ -1006,8 +1002,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       const shadow = new T.Mesh(new T.PlaneGeometry(2.6, 2.6), new T.MeshBasicMaterial({ map: new T.CanvasTexture(sc), transparent: true, depthWrite: false }));
       shadow.rotation.x = -Math.PI / 2; shadow.position.y = -2.78; scene.add(shadow);
 
-      petals.visible = false; ant.visible = false; // plain round yellow head, as requested
-      R3 = { T, gl, scene, cam, root, bodyG, body, head, armL, armR, petals, petalList, ant, star, starMat, shadow, fc, fctx, faceTex };
+      R3 = { T, gl, scene, cam, root, bodyG, body, head, armL, armR, ants, tipMat, shadow, fc, fctx, faceTex };
       resize();
     } catch (e) { R3 = null; }
   }
@@ -1063,26 +1058,18 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     const R = R3;
     R.root.position.y = -bob * 0.012;
     R.root.rotation.z = M.poseOn ? -M.lean : 0;
-    R.body.scale.set(0.86 / breathe, 0.8 * breathe, 0.74);
+    R.body.scale.set(1 / breathe, breathe, 1);
     R.armL.rotation.z = -aL; R.armR.rotation.z = -aR;
     R.head.rotation.set(S.look.y * 0.32, S.look.x * 0.5, -tilt);
     R.head.position.x = M.faceOn ? M.yaw * 0.18 : 0;
-    // petals: spin, wiggle when happy, hide the ones that would poke through the body
-    const spin = reduce ? 0 : t * (m === 'excited' || m === 'happy' ? 0.8 : m === 'sleep' ? 0.04 : 0.2);
-    R.petals.rotation.z = -spin;
-    R.petalList.forEach((p, i) => {
-      const a = ((p.userData.a + spin) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
-      p.visible = R.petals.visible && Math.abs(a - Math.PI) > 0.75;
-      const grow = m === 'happy' && !reduce ? 1 + Math.sin(t * 10 + i) * 0.15 : 1;
-      p.scale.y = 0.27 * grow;
+    // antennae wobble; tips glow, orange when scared
+    R.ants.forEach((a, i) => {
+      const wob = reduce ? 0 : Math.sin(t * (m === 'excited' || m === 'happy' ? 12 : 3) + i * 1.7) * (m === 'excited' || m === 'happy' ? 0.22 : 0.07);
+      a.rotation.z = a.userData.base + wob - S.look.x * 0.12;
     });
-    // star antenna
-    const sway = S.look.x * -0.25 + (reduce ? 0 : Math.sin(t * 3) * 0.06) + (m === 'excited' && !reduce ? Math.sin(t * 14) * 0.2 : 0);
-    R.ant.rotation.z = sway;
-    R.star.rotation.y = reduce ? 0 : t * 1.4;
     const pulse = (Math.sin(t * (m === 'excited' ? 12 : 3)) + 1) / 2;
-    R.starMat.emissive.setHex(scared ? 0xff5a1f : 0xffb000);
-    R.starMat.emissiveIntensity = m === 'sleep' ? 0.05 : 0.2 + pulse * 0.4;
+    R.tipMat.emissive.setHex(scared ? 0xff5a1f : 0xffb000);
+    R.tipMat.emissiveIntensity = m === 'sleep' ? 0.05 : 0.2 + pulse * 0.5;
     // shadow shrinks while hopping
     const hop = Math.max(0, -bob) / 30;
     R.shadow.scale.setScalar(1 - hop * 0.3);
@@ -1119,7 +1106,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     requestAnimationFrame(loop);
   }
   // ---- auto-update: compare this build with version.json, served fresh ----
-  const BUILD = '20261102232811';
+  const BUILD = '20261102234116';
   async function latestBuild() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
