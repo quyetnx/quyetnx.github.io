@@ -28,6 +28,7 @@
 :root[data-theme="dark"] { --bg: #0d1418; --panel: #152027; --fg: #dde7ec; --muted: #8aa0ad;
           --shell: #3a4a54; --shell-dark: #27343c; --screen: #050b0e; color-scheme: dark; }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
 body {
   background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px;
@@ -174,6 +175,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
   // ---- sound ----
   function chirp(m) {
     if (!soundOn || !audio) return;
+    if (audio.state === 'suspended') audio.resume();
     const seq = { happy: [660, 880, 990], surprised: [900, 400], dark: [300, 220], sleep: [400, 300, 200],
                   tickled: [800, 1000, 800, 1100], excited: [700, 900], idle: [600] }[m] || [600];
     seq.forEach((f, i) => {
@@ -190,7 +192,11 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
 
   // ---- camera ----
   document.getElementById('go').onclick = async () => {
-    try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      audio.resume && audio.resume();
+      chirp('idle');
+    } catch {}
     try {
       if (!navigator.mediaDevices) throw new Error('no camera');
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, facingMode: 'user' }, audio: false });
@@ -297,7 +303,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
 
   // ---- tickle ----
   cvs.addEventListener('pointerdown', () => {
-    if (!audio) try { audio = new AudioContext(); } catch {}
+    try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume && audio.resume(); } catch {}
     S.lastMotion = performance.now(); setMood('tickled', 1800);
   });
 
