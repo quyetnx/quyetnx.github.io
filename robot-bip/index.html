@@ -975,24 +975,26 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       };
       const armL = mkArm(-1), armR = mkArm(1);
 
-      // yellow rounded-box head
-      const head = new T.Group(); head.position.y = 0.38; root.add(head);
-      const skull = new T.Mesh(roundedBox(2.4, 1.8, 1.5, 0.34), mat(YEL)); head.add(skull);
+      // round yellow head
+      const head = new T.Group(); head.position.y = 0.32; root.add(head);
+      const skullScale = new T.Vector3(1.18, 1, 1);
+      const skull = new T.Mesh(new T.SphereGeometry(1, 64, 48), mat(YEL)); skull.scale.copy(skullScale); head.add(skull);
       // black face screen, drawn on a canvas each frame (eyes, mouth, blush)
       const fc = document.createElement('canvas'); fc.width = 640; fc.height = 380;
       const fctx = fc.getContext('2d');
       const faceTex = new T.CanvasTexture(fc); faceTex.colorSpace = T.SRGBColorSpace;
-      const face = new T.Mesh(new T.PlaneGeometry(1.95, 1.16),
+      const face = new T.Mesh(
+        new T.SphereGeometry(1.012, 64, 32, Math.PI / 2 - 0.84, 1.68, Math.PI / 2 - 0.5, 1.02),
         new T.MeshStandardMaterial({ map: faceTex, transparent: true, roughness: 0.18, metalness: 0.1,
                                      emissive: 0xffffff, emissiveMap: faceTex, emissiveIntensity: 0.55 }));
-      face.position.set(0, -0.02, 0.756); head.add(face);
+      face.scale.copy(skullScale); head.add(face);
       // two antennae with round tips
       const tipMat = new T.MeshStandardMaterial({ color: YEL2, roughness: 0.3, emissive: 0xffb000, emissiveIntensity: 0.3 });
       const ants = [-1, 1].map(sx => {
-        const a = new T.Group(); a.position.set(sx * 0.62, 0.86, 0); a.rotation.z = -sx * 0.28; head.add(a);
+        const a = new T.Group(); a.position.set(sx * 0.55, 0.8, 0); a.rotation.z = -sx * 0.3; head.add(a);
         const stalk = new T.Mesh(new T.CylinderGeometry(0.04, 0.06, 0.5, 12), mat(YEL2)); stalk.position.y = 0.25; a.add(stalk);
         const tip = new T.Mesh(new T.SphereGeometry(0.13, 24, 16), tipMat); tip.position.y = 0.56; a.add(tip);
-        a.userData.base = -sx * 0.28; a.userData.sx = sx; return a;
+        a.userData.base = -sx * 0.3; a.userData.sx = sx; return a;
       });
 
       // soft ground shadow
@@ -1106,7 +1108,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     requestAnimationFrame(loop);
   }
   // ---- auto-update: compare this build with version.json, served fresh ----
-  const BUILD = '20261102234116';
+  const BUILD = '20261102234318';
   async function latestBuild() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
