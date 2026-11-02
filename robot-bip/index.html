@@ -117,9 +117,11 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
       <li><b>Che camera</b>: Bíp giật mình</li>
       <li><b>Ngồi yên</b> lâu: Bíp ngủ</li>
       <li><b>Bấm vào Bíp</b>: cù lét</li>
+      <li>Bíp <b>nói thành tiếng</b> mọi câu trong bong bóng</li>
     </ul>
   </div>
   <button class="ghost" id="sound">Âm thanh: bật</button>
+  <p class="sub" id="voicenote" hidden>Máy này chưa có giọng đọc tiếng Việt nên Bíp nói bằng giọng mặc định. Chrome hoặc Edge thường có sẵn giọng tiếng Việt.</p>
 </aside>
 <video id="video" playsinline muted hidden></video>
 <script>
@@ -156,7 +158,31 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
   };
   const pick = a => a[Math.floor(Math.random() * a.length)];
   let bubbleTimer;
+  // ---- voice ----
+  const synth = window.speechSynthesis;
+  let viVoice = null;
+  function pickVoice() {
+    if (!synth) return;
+    const vs = synth.getVoices();
+    viVoice = vs.find(v => /^vi/i.test(v.lang) && /google/i.test(v.name)) || vs.find(v => /^vi/i.test(v.lang)) || null;
+    const note = document.getElementById('voicenote');
+    if (note && vs.length) note.hidden = !!viVoice;
+  }
+  if (synth) { pickVoice(); synth.onvoiceschanged = pickVoice; }
+  function speak(t) {
+    if (!soundOn || !synth || !S.started || /^z+/i.test(t)) return;
+    try {
+      synth.cancel();
+      const u = new SpeechSynthesisUtterance(t);
+      u.lang = 'vi-VN'; if (viVoice) u.voice = viVoice;
+      u.pitch = 1.7; u.rate = 1.08; u.volume = 1;
+      u.onstart = () => { S.talking = true; };
+      u.onend = u.onerror = () => { S.talking = false; };
+      synth.speak(u);
+    } catch {}
+  }
   function say(t, ms = 2200) {
+    speak(t);
     bubble.textContent = t; bubble.classList.remove('hide');
     clearTimeout(bubbleTimer); bubbleTimer = setTimeout(() => bubble.classList.add('hide'), ms);
   }
@@ -188,6 +214,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
   }
   document.getElementById('sound').onclick = e => {
     soundOn = !soundOn; e.target.textContent = 'Âm thanh: ' + (soundOn ? 'bật' : 'tắt');
+    if (!soundOn && synth) synth.cancel();
   };
 
   // ---- camera ----
@@ -427,7 +454,8 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     // mouth
     const mx = lx * 0.6, my = 38 + ly * 0.5;
     ctx.lineWidth = 7; ctx.beginPath();
-    if (m === 'happy' || m === 'tickled' || m === 'excited') ctx.arc(mx, my - 8, 22, 0.25, Math.PI - 0.25);
+    if (S.talking && m !== 'sleep') { const o = 6 + Math.abs(Math.sin(now / 70)) * 14; ctx.ellipse(mx, my - 2, 18, o, 0, 0, Math.PI * 2); }
+    else if (m === 'happy' || m === 'tickled' || m === 'excited') ctx.arc(mx, my - 8, 22, 0.25, Math.PI - 0.25);
     else if (m === 'surprised') { ctx.arc(mx, my, 12, 0, Math.PI * 2); }
     else if (m === 'dark') { ctx.moveTo(mx - 20, my); for (let i = 1; i <= 4; i++) ctx.lineTo(mx - 20 + i * 10, my + (i % 2 ? -6 : 0)); }
     else if (m === 'sleep') { ctx.ellipse(mx, my, 8, 5 + Math.sin(now / 600) * 2, 0, 0, Math.PI * 2); }
