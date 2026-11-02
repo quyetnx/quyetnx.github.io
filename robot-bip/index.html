@@ -115,11 +115,11 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     <div class="label">Thử chơi với Bíp</div>
     <ul>
       <li><b>Di chuyển</b> qua lại: mắt nhìn theo</li>
-      <li><b>Vẫy tay</b> nhanh: Bíp vẫy chào</li>
+      <li><b>Vẫy tay</b> nhanh: Bíp vẫy tay và nói "Nắng Mai xin chào!"</li>
       <li><b>Che camera</b>: Bíp giật mình</li>
       <li><b>Ngồi yên</b> lâu: Bíp ngủ</li>
       <li><b>Bấm vào Bíp</b>: cù lét</li>
-      <li>Bíp <b>nói thành tiếng</b> mọi câu trong bong bóng</li>
+      <li>Bíp <b>nói tiếng Anh</b> các câu còn lại</li>
     </ul>
   </div>
   <div id="update" class="update" hidden>
@@ -127,7 +127,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     <button id="reload">Tải bản mới</button>
   </div>
   <button class="ghost" id="sound">Âm thanh: bật</button>
-  <p class="sub" id="voicenote" hidden>Máy này chưa có giọng đọc tiếng Việt nên Bíp nói bằng giọng mặc định. Chrome hoặc Edge thường có sẵn giọng tiếng Việt.</p>
+  <p class="sub" id="voicenote" hidden>Máy này chưa có giọng đọc tiếng Việt nên câu "Nắng Mai xin chào!" sẽ được đọc bằng giọng mặc định. Chrome hoặc Edge thường có sẵn giọng tiếng Việt.</p>
 </aside>
 <video id="video" playsinline muted hidden></video>
 <script>
@@ -153,24 +153,26 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     idle: 'Tò mò', happy: 'Vui quá!', excited: 'Phấn khích', surprised: 'Giật mình',
     sleep: 'Ngủ gật', tickled: 'Nhột!', dark: 'Sợ bóng tối',
   };
+  const WAVE_LINE = 'Nắng Mai xin chào!';
   const LINES = {
-    happy: ['Xin chào!', 'Chào bạn nha!', 'Hi hi, thấy rồi!'],
-    surprised: ['Á! Ai đó?', 'Ối giật cả mình!'],
-    dark: ['Ai tắt đèn vậy?', 'Tối quá, Bíp sợ...'],
+    happy: ['Hello there!', 'Hi friend!', 'I see you!'],
+    surprised: ['Whoa! Who is that?', 'Oh! You scared me!'],
+    dark: ['Who turned off the lights?', 'It is so dark, I am scared...'],
     sleep: ['Zzz...'],
-    wake: ['Ơ, bạn quay lại rồi!', 'Bíp tỉnh rồi đây!'],
-    tickled: ['Hí hí, nhột!', 'Đừng cù Bíp mà!'],
-    excited: ['Nhảy hăng quá!', 'Woa, nhanh ghê!'],
+    wake: ['Oh, you are back!', 'I am awake now!'],
+    tickled: ['Hee hee, that tickles!', 'Stop tickling me!'],
+    excited: ['Wow, you are fast!', 'Nice moves!'],
   };
   const pick = a => a[Math.floor(Math.random() * a.length)];
   let bubbleTimer;
   // ---- voice ----
   const synth = window.speechSynthesis;
-  let viVoice = null;
+  let viVoice = null, enVoice = null;
   function pickVoice() {
     if (!synth) return;
     const vs = synth.getVoices();
     viVoice = vs.find(v => /^vi/i.test(v.lang) && /google/i.test(v.name)) || vs.find(v => /^vi/i.test(v.lang)) || null;
+    enVoice = vs.find(v => /^en-US/i.test(v.lang) && /google/i.test(v.name)) || vs.find(v => /^en-US/i.test(v.lang)) || vs.find(v => /^en/i.test(v.lang)) || null;
     const note = document.getElementById('voicenote');
     if (note && vs.length) note.hidden = !!viVoice;
   }
@@ -180,7 +182,9 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     try {
       synth.cancel();
       const u = new SpeechSynthesisUtterance(t);
-      u.lang = 'vi-VN'; if (viVoice) u.voice = viVoice;
+      const vi = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(t);
+      u.lang = vi ? 'vi-VN' : 'en-US';
+      const voice = vi ? viVoice : enVoice; if (voice) u.voice = voice;
       u.pitch = 1.7; u.rate = 1.08; u.volume = 1;
       u.onstart = () => { S.talking = true; };
       u.onend = u.onerror = () => { S.talking = false; };
@@ -236,7 +240,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
       video.srcObject = stream; await video.play();
       document.getElementById('start').hidden = true;
       S.started = true; S.lastMotion = performance.now();
-      setMood('happy', 2500, 'Xin chào! Mình là Bíp!');
+      setMood('happy', 2500, "Hi! I'm Bip!");
     } catch (err) {
       startPointerMode();
     }
@@ -270,7 +274,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     if (bright < 22) {
       if (!S.dark) { S.dark = true; setMood('surprised', 1200); setTimeout(() => S.dark && setMood('dark', 99999), 900); }
       return;
-    } else if (S.dark) { S.dark = false; setMood('happy', 2000, 'Phù, sáng lại rồi!'); }
+    } else if (S.dark) { S.dark = false; setMood('happy', 2000, 'Phew, the lights are back!'); }
 
     if (count > 12) {
       const cx = sx / count / W, cy = sy / count / H;
@@ -286,7 +290,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
         if (Math.abs(dx) < 0.025) continue;
         const nd = Math.sign(dx); if (dir && nd !== dir) flips++; dir = nd;
       }
-      if (flips >= 4 && frac > 0.03 && S.mood !== 'happy') { setMood('happy', 3000); S.hist = []; }
+      if (flips >= 4 && frac > 0.03 && S.mood !== 'happy') { setMood('happy', 3000, WAVE_LINE); S.hist = []; }
       else if (frac > 0.25 && S.mood === 'idle') setMood('excited', 2000);
     } else {
       S.lookT.x *= 0.98; S.lookT.y *= 0.98;
@@ -302,7 +306,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     document.getElementById('start').hidden = true;
     document.getElementById('pmode').hidden = false;
     pctx.fillStyle = css('--screen'); pctx.fillRect(0, 0, W, H);
-    setMood('happy', 2500, 'Xin chào! Mình là Bíp!');
+    setMood('happy', 2500, "Hi! I'm Bip!");
   }
   addEventListener('pointermove', e => {
     if (!pointerMode) return;
@@ -327,7 +331,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
       if (Math.abs(dx) < 0.01) continue;
       const nd = Math.sign(dx); if (dir && nd !== dir) flips++; dir = nd;
     }
-    if (flips >= 4 && S.mood !== 'happy') { setMood('happy', 3000); S.hist = []; }
+    if (flips >= 4 && S.mood !== 'happy') { setMood('happy', 3000, WAVE_LINE); S.hist = []; }
     else if (sp > 3 && S.mood === 'idle') setMood('excited', 1500);
   });
   setInterval(() => {
@@ -490,7 +494,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     requestAnimationFrame(loop);
   }
   // ---- auto-update: compare this build with version.json, served fresh ----
-  const BUILD = '20261102224120';
+  const BUILD = '20261102224343';
   async function latestBuild() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
