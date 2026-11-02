@@ -373,7 +373,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     ctx.clearRect(0, 0, w, h);
     const C = { shell: css('--shell'), dark: css('--shell-dark'), screen: css('--screen'), glow: css('--glow'), warn: css('--warn'), fg: css('--fg') };
     const m = S.mood, t = now / 1000;
-    const k = Math.min(w / 520, h / 600);
+    const k = Math.min(w / 560, h / 640);
     const ease = reduce ? 1 : 0.12;
     S.look.x += (S.lookT.x - S.look.x) * ease; S.look.y += (S.lookT.y - S.look.y) * ease;
 
@@ -384,51 +384,97 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     if (m === 'surprised') bob = -14;
     if (reduce) bob = 0;
     ctx.save();
-    ctx.translate(w / 2, h * 0.56 + bob * k); ctx.scale(k, k);
+    ctx.translate(w / 2, h * 0.53 + bob * k); ctx.scale(k, k);
     const tilt = m === 'sleep' ? 0.12 : S.look.x * 0.08 + (m === 'tickled' && !reduce ? Math.sin(t * 25) * 0.08 : 0);
 
+    // Nắng Mai palette, taken from the school logo (same in both themes)
+    const B = { sun: '#FFC21A', sunDeep: '#F59A00', red: '#E3262E', blue: '#1F80D6', blueDeep: '#1565B0', cream: '#FFF8E6', creamEdge: '#F1DFB4' };
+    C.glow = '#FFD84D';
+
     // shadow
-    ctx.fillStyle = 'rgba(0,0,0,.12)';
-    ctx.beginPath(); ctx.ellipse(0, 250 - bob, 150, 18, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,.14)';
+    ctx.beginPath(); ctx.ellipse(0, 262 - bob, 140, 16, 0, 0, Math.PI * 2); ctx.fill();
 
-    // arms
+    // feet
+    ctx.fillStyle = B.red;
+    rr(-92, 222, 70, 34, 17); ctx.fill(); rr(22, 222, 70, 34, 17); ctx.fill();
 
-    // torso
-    ctx.fillStyle = C.shell; rr(-115, 40, 230, 190, 40); ctx.fill();
-    ctx.fillStyle = C.dark; rr(-60, 90, 120, 80, 16); ctx.fill();
-    // chest lights = motion level
+    // body
+    ctx.fillStyle = B.cream; rr(-110, 40, 220, 190, 70); ctx.fill();
+    ctx.strokeStyle = B.creamEdge; ctx.lineWidth = 4; ctx.stroke();
+    ctx.fillStyle = B.blue; rr(-70, 34, 140, 26, 13); ctx.fill(); // collar
+    // chest badge with the school logo
+    ctx.save();
+    ctx.beginPath(); ctx.arc(0, 128, 58, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.lineWidth = 6; ctx.strokeStyle = B.sun; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 128, 53, 0, Math.PI * 2); ctx.clip();
+    const logo = document.getElementById('logo');
+    if (logo && logo.complete && logo.naturalWidth) {
+      const lw = 104, lh = lw * logo.naturalHeight / logo.naturalWidth;
+      ctx.drawImage(logo, -lw / 2, 128 - lh / 2, lw, lh);
+    }
+    ctx.restore();
+    // belly lights = motion level
     for (let i = 0; i < 5; i++) {
       const on = S.motion * 25 > i || m === 'excited';
-      ctx.fillStyle = on ? C.glow : C.screen;
-      ctx.beginPath(); ctx.arc(-40 + i * 20, 130, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = on ? B.sun : B.creamEdge;
+      ctx.beginPath(); ctx.arc(-36 + i * 18, 205, 6, 0, Math.PI * 2); ctx.fill();
     }
-
-    // neck
-    ctx.fillStyle = C.dark; rr(-30, 20, 60, 30, 8); ctx.fill();
 
     // head
     ctx.save(); ctx.translate(0, -70); ctx.rotate(tilt);
-    // antenna
-    ctx.strokeStyle = C.dark; ctx.lineWidth = 8; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(0, -110); ctx.quadraticCurveTo(S.look.x * -20, -150, S.look.x * -10, -175); ctx.stroke();
-    const pulse = (Math.sin(t * (m === 'excited' ? 12 : 3)) + 1) / 2;
-    ctx.fillStyle = m === 'dark' || m === 'surprised' ? C.warn : C.glow;
-    ctx.globalAlpha = m === 'sleep' ? 0.3 : 0.5 + pulse * 0.5;
-    ctx.beginPath(); ctx.arc(S.look.x * -10, -180, 14, 0, Math.PI * 2); ctx.fill();
+    // sun rays behind the head
+    const spin = reduce ? 0 : t * (m === 'excited' || m === 'happy' ? 0.9 : m === 'sleep' ? 0.05 : 0.25);
+    ctx.globalAlpha = m === 'sleep' || m === 'dark' ? 0.45 : 1;
+    for (let r = 0; r < 12; r++) {
+      const a = spin + r * Math.PI / 6;
+      const dn = Math.abs(((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - Math.PI);
+      if (dn < 0.75) continue; // no rays over the body
+      ctx.save(); ctx.rotate(a);
+      const len = 30 + (r % 2 ? 0 : 10) + (m === 'happy' && !reduce ? Math.sin(t * 10 + r) * 6 : 0);
+      ctx.fillStyle = r % 2 ? B.sunDeep : B.sun;
+      ctx.beginPath();
+      ctx.moveTo(-17, -166); ctx.quadraticCurveTo(0, -166 - len * 2.2, 17, -166);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
     ctx.globalAlpha = 1;
+    // sun disc + head
+    ctx.fillStyle = B.sun; ctx.beginPath(); ctx.arc(0, 0, 174, 0, Math.PI * 2); ctx.fill();
+    // red arc headband, like the logo's rainbow
+    ctx.strokeStyle = B.red; ctx.lineWidth = 16; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.ellipse(0, 6, 170, 148, 0, Math.PI * 1.08, Math.PI * 1.92); ctx.stroke();
+    ctx.fillStyle = B.cream; ctx.beginPath(); ctx.ellipse(0, 6, 160, 138, 0, 0, Math.PI * 2); ctx.fill();
     // ears
-    ctx.fillStyle = C.dark; rr(-185, -40, 30, 70, 12); ctx.fill(); rr(155, -40, 30, 70, 12); ctx.fill();
-    // shell + screen
-    ctx.fillStyle = C.shell; rr(-165, -115, 330, 210, 56); ctx.fill();
-    ctx.fillStyle = C.screen; rr(-135, -88, 270, 156, 36); ctx.fill();
+    ctx.fillStyle = B.blue;
+    ctx.beginPath(); ctx.arc(-172, 10, 24, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(172, 10, 24, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = B.blueDeep;
+    ctx.beginPath(); ctx.arc(-172, 10, 11, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(172, 10, 11, 0, Math.PI * 2); ctx.fill();
+    // face screen
+    ctx.fillStyle = C.screen; rr(-128, -84, 256, 150, 60); ctx.fill();
+    // cheeks
+    if (m === 'happy' || m === 'tickled') {
+      ctx.fillStyle = 'rgba(255,110,110,.55)';
+      ctx.beginPath(); ctx.ellipse(-92, 30, 16, 9, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(92, 30, 16, 9, 0, 0, Math.PI * 2); ctx.fill();
+    }
     drawFace(now, C);
+    // star on top, from the logo
+    const sway = S.look.x * -14 + (m === 'excited' && !reduce ? Math.sin(t * 14) * 8 : 0);
+    ctx.strokeStyle = B.blueDeep; ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.moveTo(0, -150); ctx.quadraticCurveTo(sway * 0.5, -178, sway, -196); ctx.stroke();
+    const pulse = (Math.sin(t * (m === 'excited' ? 12 : 3)) + 1) / 2;
+    drawStar(sway, -214, 26 + (m === 'sleep' ? 0 : pulse * 3), m === 'dark' || m === 'surprised' ? '#FF7A3D' : B.sun, B.red);
     ctx.restore();
 
     // arms: drawn last so they sit in front; positive angle swings the left arm outward/up, negative the right
     const armWave = m === 'happy' && !reduce ? Math.sin(t * 12) * 0.45 : 0;
     const scared = m === 'surprised' || m === 'dark';
-    drawArm(-128, 62, m === 'happy' ? 2.35 + armWave : scared ? 2.7 : 0.3 + Math.sin(t*2)*.05, C);
-    drawArm(128, 62, scared ? -2.7 : (m === 'excited' && !reduce ? -1.2 + Math.sin(t*14)*.5 : -0.3 - Math.sin(t*2)*.05), C, true);
+    drawArm(-112, 70, m === 'happy' ? 2.35 + armWave : scared ? 2.7 : 0.3 + Math.sin(t*2)*.05, B);
+    drawArm(112, 70, scared ? -2.7 : (m === 'excited' && !reduce ? -1.2 + Math.sin(t*14)*.5 : -0.3 - Math.sin(t*2)*.05), B, true);
 
     ctx.restore();
 
@@ -438,16 +484,28 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
       for (let i = 0; i < 3; i++) {
         const p = ((t * 0.4 + i / 3) % 1);
         ctx.globalAlpha = 1 - p;
-        ctx.fillText('Z', w / 2 + (150 + p * 60) * k, h * 0.56 + (-200 - p * 120) * k);
+        ctx.fillText('Z', w / 2 + (170 + p * 60) * k, h * 0.53 + (-220 - p * 110) * k);
       }
       ctx.globalAlpha = 1;
     }
   }
 
-  function drawArm(x, y, ang, C, right) {
+  function drawStar(x, y, r, fill, edge) {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / 5, rad = i % 2 ? r * 0.45 : r;
+      ctx.lineTo(x + Math.cos(a) * rad, y + Math.sin(a) * rad);
+    }
+    ctx.closePath();
+    ctx.fillStyle = fill; ctx.fill();
+    ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.strokeStyle = edge; ctx.stroke();
+  }
+
+  function drawArm(x, y, ang, B) {
     ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
-    ctx.fillStyle = C.dark; rr(-14, 0, 28, 110, 14); ctx.fill();
-    ctx.fillStyle = C.shell; ctx.beginPath(); ctx.arc(0, 118, 24, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = B.blue; rr(-15, 0, 30, 104, 15); ctx.fill();
+    ctx.fillStyle = B.red; ctx.beginPath(); ctx.arc(0, 112, 25, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = B.sun; ctx.beginPath(); ctx.arc(0, 112, 10, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
 
@@ -510,7 +568,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     requestAnimationFrame(loop);
   }
   // ---- auto-update: compare this build with version.json, served fresh ----
-  const BUILD = '20261102225252';
+  const BUILD = '20261102225854';
   async function latestBuild() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
