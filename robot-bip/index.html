@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-cache">
-<title>Robot Bíp</title>
+<title>Robot Nắng Mai</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Be+Vietnam+Pro:wght@400;600&display=swap">
 <style>
@@ -87,21 +87,21 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
   <canvas id="robot"></canvas>
   <div id="bubble" class="hide"></div>
   <div id="start">
-    <h1>Robot Bíp</h1>
-    <p>Bíp nhìn bạn qua camera: mắt dõi theo chuyển động, vẫy tay thì Bíp chào lại, che camera thì Bíp giật mình, bỏ đi lâu thì Bíp ngủ gật.</p>
-    <button id="go">Đánh thức Bíp</button>
+    <h1>Robot Nắng Mai</h1>
+    <p>Nắng Mai nhìn bạn qua camera: mắt dõi theo chuyển động, bạn vẫy tay thì được chào lại, che camera thì giật mình, bỏ đi lâu thì ngủ gật.</p>
+    <button id="go">Đánh thức Nắng Mai</button>
     <p id="err"></p>
   </div>
 </div>
 <aside>
   <div>
-    <h1>Robot Bíp</h1>
+    <h1>Robot Nắng Mai</h1>
     <p class="sub">Mọi xử lý hình ảnh chạy ngay trên máy bạn, không gửi đi đâu cả.</p>
   </div>
   <div>
-    <div class="label">Bíp đang thấy</div>
+    <div class="label">Nắng Mai đang thấy</div>
     <div class="cam"><canvas id="preview" width="80" height="60"></canvas></div>
-    <p id="pmode" hidden>Camera bị chặn ở đây, Bíp đang dõi theo chuột hoặc ngón tay của bạn. Lắc chuột qua lại thật nhanh để vẫy chào.</p>
+    <p id="pmode" hidden>Camera bị chặn ở đây, Nắng Mai đang dõi theo chuột hoặc ngón tay của bạn. Lắc chuột qua lại thật nhanh để vẫy chào.</p>
   </div>
   <div>
     <div class="label">Tâm trạng</div>
@@ -112,22 +112,21 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     <div class="meter"><i id="motion"></i></div>
   </div>
   <div>
-    <div class="label">Thử chơi với Bíp</div>
+    <div class="label">Thử chơi với Nắng Mai</div>
     <ul>
       <li><b>Di chuyển</b> qua lại: mắt nhìn theo</li>
-      <li><b>Vẫy tay</b> nhanh: Bíp vẫy tay và nói "Nắng Mai xin chào!"</li>
-      <li><b>Che camera</b>: Bíp giật mình</li>
-      <li><b>Ngồi yên</b> lâu: Bíp ngủ</li>
-      <li><b>Bấm vào Bíp</b>: cù lét</li>
-      <li>Bíp <b>nói tiếng Anh</b> các câu còn lại</li>
+      <li><b>Vẫy tay</b> nhanh: Nắng Mai vẫy tay và chào "Hello! Nắng Mai says hi!"</li>
+      <li><b>Che camera</b>: Nắng Mai giật mình</li>
+      <li><b>Ngồi yên</b> lâu: Nắng Mai ngủ</li>
+      <li><b>Bấm vào Nắng Mai</b>: cù lét</li>
+      <li>Nắng Mai <b>nói tiếng Anh</b> mọi câu</li>
     </ul>
   </div>
   <div id="update" class="update" hidden>
-    <span>Bíp vừa có bản mới.</span>
+    <span>Nắng Mai vừa có bản mới.</span>
     <button id="reload">Tải bản mới</button>
   </div>
   <button class="ghost" id="sound">Âm thanh: bật</button>
-  <p class="sub" id="voicenote" hidden>Máy này chưa có giọng đọc tiếng Việt nên câu "Nắng Mai xin chào!" sẽ được đọc bằng giọng mặc định. Chrome hoặc Edge thường có sẵn giọng tiếng Việt.</p>
 </aside>
 <video id="video" playsinline muted hidden></video>
 <script>
@@ -153,7 +152,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     idle: 'Tò mò', happy: 'Vui quá!', excited: 'Phấn khích', surprised: 'Giật mình',
     sleep: 'Ngủ gật', tickled: 'Nhột!', dark: 'Sợ bóng tối',
   };
-  const WAVE_LINE = 'Nắng Mai xin chào!';
+  const WAVE_LINE = 'Hello! Nắng Mai says hi!';
   const LINES = {
     happy: ['Hello there!', 'Hi friend!', 'I see you!'],
     surprised: ['Whoa! Who is that?', 'Oh! You scared me!'],
@@ -182,9 +181,9 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     try {
       synth.cancel();
       const u = new SpeechSynthesisUtterance(t);
-      const vi = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(t);
-      u.lang = vi ? 'vi-VN' : 'en-US';
-      const voice = vi ? viVoice : enVoice; if (voice) u.voice = voice;
+      // every line is English; strip Vietnamese marks so the English voice can read the name
+      u.text = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd');
+      u.lang = 'en-US'; if (enVoice) u.voice = enVoice;
       u.pitch = 1.7; u.rate = 1.08; u.volume = 1;
       u.onstart = () => { S.talking = true; };
       u.onend = u.onerror = () => { S.talking = false; };
@@ -240,7 +239,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
       video.srcObject = stream; await video.play();
       document.getElementById('start').hidden = true;
       S.started = true; S.lastMotion = performance.now();
-      setMood('happy', 2500, "Hi! I'm Bip!");
+      setMood('happy', 2500, "Hi! I'm Nắng Mai!");
     } catch (err) {
       startPointerMode();
     }
@@ -306,7 +305,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     document.getElementById('start').hidden = true;
     document.getElementById('pmode').hidden = false;
     pctx.fillStyle = css('--screen'); pctx.fillRect(0, 0, W, H);
-    setMood('happy', 2500, "Hi! I'm Bip!");
+    setMood('happy', 2500, "Hi! I'm Nắng Mai!");
   }
   addEventListener('pointermove', e => {
     if (!pointerMode) return;
@@ -494,7 +493,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     requestAnimationFrame(loop);
   }
   // ---- auto-update: compare this build with version.json, served fresh ----
-  const BUILD = '20261102224343';
+  const BUILD = '20261102224519';
   async function latestBuild() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
