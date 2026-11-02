@@ -38,7 +38,8 @@ body {
 }
 .err { color: #d6453d; }
 #stage { position: relative; min-width: 0; }
-#robot { width: 100%; height: 100%; display: block; }
+#robot, #robot3d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#robot { z-index: 1; }
 #bubble {
   position: absolute; left: 50%; top: 6%; transform: translateX(-50%);
   background: var(--panel); border: 2px solid var(--fg); border-radius: 14px;
@@ -68,7 +69,7 @@ button {
 button.ghost { background: transparent; color: var(--fg); }
 button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
 #start {
-  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 14px; background: color-mix(in srgb, var(--bg) 85%, transparent); text-align: center; padding: 20px;
 }
 #start p { max-width: 380px; color: var(--muted); margin: 0; line-height: 1.5; }
@@ -178,10 +179,11 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   <button class="ghost" id="sound">Âm thanh: bật</button>
 </aside>
 <video id="video" playsinline muted hidden></video>
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
 <script>
 (() => {
   const W = 80, H = 60;
-  const cvs = document.getElementById('robot'), ctx = cvs.getContext('2d');
+  const cvs = document.getElementById('robot'); let ctx = cvs.getContext('2d');
   const prev = document.getElementById('preview'), pctx = prev.getContext('2d', { willReadFrequently: true });
   const video = document.getElementById('video');
   const bubble = document.getElementById('bubble'), moodEl = document.getElementById('mood'), meter = document.getElementById('motion');
@@ -686,10 +688,18 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   function resize() {
     const r = cvs.getBoundingClientRect(), dpr = devicePixelRatio || 1;
     cvs.width = r.width * dpr; cvs.height = r.height * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (R3) {
+      R3.gl.setSize(r.width, r.height, false);
+      const aspect = r.width / Math.max(1, r.height);
+      R3.cam.aspect = aspect;
+      const dist = 11 * Math.max(1, 0.85 / aspect);
+      R3.cam.position.set(0, -0.15, dist); R3.cam.lookAt(0, -0.45, 0);
+      R3.cam.updateProjectionMatrix();
+    }
   }
   addEventListener('resize', resize);
 
-  function draw(now) {
+  function draw2D(now) {
     const w = cvs.clientWidth, h = cvs.clientHeight;
     ctx.clearRect(0, 0, w, h);
     const C = { shell: css('--shell'), dark: css('--shell-dark'), screen: css('--screen'), glow: css('--glow'), warn: css('--warn'), fg: css('--fg') };
@@ -886,6 +896,212 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     ctx.shadowBlur = 0; ctx.fillStyle = C.glow;
   }
 
+
+  // ---- 3D Nắng Mai (three.js); falls back to the 2D drawing if WebGL or the library is missing ----
+  let R3 = null;
+  function init3D() {
+    if (!window.THREE) return;
+    try {
+      const T = window.THREE;
+      const gl = new T.WebGLRenderer({ antialias: true, alpha: true });
+      gl.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+      gl.outputColorSpace = T.SRGBColorSpace;
+      gl.domElement.id = 'robot3d';
+      cvs.parentNode.insertBefore(gl.domElement, cvs);
+      const scene = new T.Scene();
+      const cam = new T.PerspectiveCamera(30, 1, 0.1, 100);
+      scene.add(new T.HemisphereLight(0xffffff, 0x9fb0bd, 1.5));
+      const sun = new T.DirectionalLight(0xffffff, 2.4); sun.position.set(3, 5, 7); scene.add(sun);
+      const rim = new T.DirectionalLight(0xfff0c0, 1.0); rim.position.set(-5, 3, -4); scene.add(rim);
+      const mat = (c, rough = 0.35) => new T.MeshStandardMaterial({ color: c, roughness: rough, metalness: 0.05 });
+      const YEL = 0xFFC417, YEL2 = 0xFFAE0A, BLUE = 0x2B7FDA, GREEN = 0x3CBF5E, GREEN2 = 0x2FA64F;
+
+      const root = new T.Group(); scene.add(root);
+      const bodyG = new T.Group(); root.add(bodyG);
+
+      // blue egg body
+      const body = new T.Mesh(new T.SphereGeometry(1, 48, 32), mat(BLUE));
+      body.scale.set(0.86, 0.8, 0.74); body.position.y = -1.5; bodyG.add(body);
+
+      // logo badge on the chest
+      const bc = document.createElement('canvas'); bc.width = bc.height = 256;
+      const bx = bc.getContext('2d');
+      const paintBadge = () => {
+        bx.clearRect(0, 0, 256, 256);
+        bx.beginPath(); bx.arc(128, 128, 126, 0, Math.PI * 2); bx.fillStyle = '#FFC417'; bx.fill();
+        bx.beginPath(); bx.arc(128, 128, 112, 0, Math.PI * 2); bx.fillStyle = '#fff'; bx.fill();
+        const logo = document.getElementById('logo');
+        if (logo && logo.complete && logo.naturalWidth) {
+          bx.save(); bx.beginPath(); bx.arc(128, 128, 108, 0, Math.PI * 2); bx.clip();
+          const lw = 212, lh = lw * logo.naturalHeight / logo.naturalWidth;
+          bx.drawImage(logo, 128 - lw / 2, 128 - lh / 2, lw, lh); bx.restore();
+        }
+      };
+      paintBadge();
+      const badgeTex = new T.CanvasTexture(bc); badgeTex.colorSpace = T.SRGBColorSpace; badgeTex.anisotropy = 4;
+      const logoImg = document.getElementById('logo');
+      if (logoImg && !logoImg.complete) logoImg.addEventListener('load', () => { paintBadge(); badgeTex.needsUpdate = true; });
+      const badge = new T.Mesh(new T.CircleGeometry(0.42, 64),
+        new T.MeshStandardMaterial({ map: badgeTex, transparent: true, roughness: 0.5 }));
+      badge.position.set(0, -1.42, 0.745); badge.rotation.x = -0.08; bodyG.add(badge);
+
+      // green legs and feet
+      for (const sx of [-1, 1]) {
+        const leg = new T.Mesh(new T.CapsuleGeometry(0.17, 0.28, 8, 16), mat(GREEN));
+        leg.position.set(sx * 0.36, -2.3, 0); bodyG.add(leg);
+        const foot = new T.Mesh(new T.SphereGeometry(1, 32, 16), mat(GREEN2));
+        foot.scale.set(0.3, 0.17, 0.4); foot.position.set(sx * 0.38, -2.6, 0.1); bodyG.add(foot);
+      }
+
+      // yellow arms, pivoting at the shoulders
+      const mkArm = sx => {
+        const g = new T.Group(); g.position.set(sx * 0.8, -1.12, 0);
+        const up = new T.Mesh(new T.CapsuleGeometry(0.14, 0.42, 8, 16), mat(YEL)); up.position.y = -0.33; g.add(up);
+        const hand = new T.Mesh(new T.SphereGeometry(0.22, 24, 16), mat(YEL2)); hand.position.y = -0.74; g.add(hand);
+        bodyG.add(g); return g;
+      };
+      const armL = mkArm(-1), armR = mkArm(1);
+
+      // yellow sunshine head
+      const head = new T.Group(); head.position.y = 0.32; root.add(head);
+      const skullScale = new T.Vector3(1.18, 1, 1);
+      const skull = new T.Mesh(new T.SphereGeometry(1, 64, 48), mat(YEL)); skull.scale.copy(skullScale); head.add(skull);
+      // black face, drawn on a canvas each frame (eyes, mouth, blush)
+      const fc = document.createElement('canvas'); fc.width = 640; fc.height = 380;
+      const fctx = fc.getContext('2d');
+      const faceTex = new T.CanvasTexture(fc); faceTex.colorSpace = T.SRGBColorSpace;
+      const face = new T.Mesh(
+        new T.SphereGeometry(1.012, 64, 32, Math.PI / 2 - 0.84, 1.68, Math.PI / 2 - 0.5, 1.02),
+        new T.MeshStandardMaterial({ map: faceTex, transparent: true, roughness: 0.18, metalness: 0.1,
+                                     emissive: 0xffffff, emissiveMap: faceTex, emissiveIntensity: 0.55 }));
+      face.scale.copy(skullScale); head.add(face);
+      // sun petals ring
+      const petals = new T.Group(); petals.position.z = -0.3; head.add(petals);
+      const petalList = [];
+      for (let i = 0; i < 14; i++) {
+        const a = i * Math.PI * 2 / 14;
+        const pm = new T.Mesh(new T.SphereGeometry(1, 20, 12), mat(i % 2 ? YEL2 : YEL));
+        pm.scale.set(0.17, 0.27, 0.12);
+        pm.position.set(Math.sin(a) * 1.36, Math.cos(a) * 1.2, 0); pm.rotation.z = -a;
+        pm.userData.a = a; petals.add(pm); petalList.push(pm);
+      }
+      // star antenna
+      const ant = new T.Group(); ant.position.y = 0.92; head.add(ant);
+      const stalk = new T.Mesh(new T.CylinderGeometry(0.035, 0.05, 0.42, 12), mat(YEL2)); stalk.position.y = 0.21; ant.add(stalk);
+      const shape = new T.Shape();
+      for (let i = 0; i < 10; i++) {
+        const a = Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 0.11 : 0.24;
+        const x = Math.cos(a) * r, y = Math.sin(a) * r;
+        i ? shape.lineTo(x, y) : shape.moveTo(x, y);
+      }
+      const starGeo = new T.ExtrudeGeometry(shape, { depth: 0.08, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.03, bevelSegments: 3 });
+      starGeo.center();
+      const starMat = new T.MeshStandardMaterial({ color: YEL, roughness: 0.3, emissive: 0xffb000, emissiveIntensity: 0.3 });
+      const star = new T.Mesh(starGeo, starMat); star.position.y = 0.6; ant.add(star);
+
+      // soft ground shadow
+      const sc = document.createElement('canvas'); sc.width = sc.height = 128;
+      const sx2 = sc.getContext('2d'); const g = sx2.createRadialGradient(64, 64, 4, 64, 64, 64);
+      g.addColorStop(0, 'rgba(0,0,0,.32)'); g.addColorStop(1, 'rgba(0,0,0,0)'); sx2.fillStyle = g; sx2.fillRect(0, 0, 128, 128);
+      const shadow = new T.Mesh(new T.PlaneGeometry(2.6, 2.6), new T.MeshBasicMaterial({ map: new T.CanvasTexture(sc), transparent: true, depthWrite: false }));
+      shadow.rotation.x = -Math.PI / 2; shadow.position.y = -2.78; scene.add(shadow);
+
+      petals.visible = false; ant.visible = false; // plain round yellow head, as requested
+      R3 = { T, gl, scene, cam, root, bodyG, body, head, armL, armR, petals, petalList, ant, star, starMat, shadow, fc, fctx, faceTex };
+      resize();
+    } catch (e) { R3 = null; }
+  }
+
+  function paintFace(now) {
+    const f = R3.fctx, Wc = R3.fc.width, Hc = R3.fc.height;
+    const C = { screen: '#0b1418', glow: '#FFE066', fg: css('--fg'), warn: css('--warn') };
+    const saved = ctx; ctx = f;
+    try {
+      f.setTransform(1, 0, 0, 1, 0, 0); f.clearRect(0, 0, Wc, Hc);
+      f.fillStyle = C.screen; f.beginPath(); f.roundRect(0, 0, Wc, Hc, 150); f.fill();
+      const sc = 1.9; f.translate(Wc / 2, Hc / 2 - 4 * sc); f.scale(sc, sc);
+      const m = S.mood;
+      const blushA = m === 'happy' || m === 'tickled' ? 0.75 : m === 'sleep' ? 0.25 : 0.4;
+      f.fillStyle = 'rgba(255,120,140,' + blushA + ')';
+      f.beginPath(); f.ellipse(-104, 40, 22, 12, 0, 0, Math.PI * 2); f.fill();
+      f.beginPath(); f.ellipse(104, 40, 22, 12, 0, 0, Math.PI * 2); f.fill();
+      // the 3D head turns, so keep the face features nearer the centre than in 2D
+      const lx = S.look.x, ly = S.look.y;
+      S.look.x = lx * 0.45; S.look.y = ly * 0.45;
+      drawFace(now, C, null);
+      S.look.x = lx; S.look.y = ly;
+    } finally { ctx = saved; }
+    R3.faceTex.needsUpdate = true;
+  }
+
+  function draw3D(now) {
+    const w = cvs.clientWidth, h = cvs.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+    const m = S.mood, t = now / 1000;
+    const ease = reduce ? 1 : 0.12;
+    S.look.x += (S.lookT.x - S.look.x) * ease; S.look.y += (S.lookT.y - S.look.y) * ease;
+
+    let bob = Math.sin(t * 2) * 5;
+    if (m === 'happy') bob = -Math.abs(Math.sin(t * 7)) * 22;
+    if (m === 'excited' || m === 'tickled') bob = Math.sin(t * 18) * 8;
+    if (m === 'sleep') bob = Math.sin(t * 1.2) * 5 + 8;
+    if (m === 'surprised') bob = -18;
+    if (reduce) bob = 0;
+    const breathe = reduce ? 1 : 1 + Math.sin(t * 2.4) * 0.02;
+    let tilt = m === 'sleep' ? 0.16 : S.look.x * 0.1 + (m === 'tickled' && !reduce ? Math.sin(t * 25) * 0.09 : 0);
+    if (M.faceOn && m !== 'sleep') { tilt = M.roll; S.lookT.x = M.yaw; S.lookT.y = M.pitch; }
+    if (m === 'thinking') { S.lookT.x = 0.7; S.lookT.y = -0.9; tilt = 0.12 + (reduce ? 0 : Math.sin(t * 3) * 0.04); }
+
+    const armWave = m === 'happy' && !reduce ? Math.sin(t * 13) * 0.5 : 0;
+    const scared = m === 'surprised' || m === 'dark';
+    const idleSwing = reduce ? 0 : Math.sin(t * 2) * 0.08;
+    let aL = m === 'happy' ? 2.5 + armWave : scared ? 2.85 : m === 'tickled' ? 1.6 + Math.sin(t*20)*.3 : 0.35 + idleSwing;
+    let aR = scared ? -2.85 : m === 'tickled' ? -1.6 - Math.sin(t*20)*.3 : (m === 'excited' && !reduce ? -1.9 + Math.sin(t*14)*.5 : -0.35 - idleSwing);
+    if (M.poseOn && M.okL) aL = M.armL;
+    if (M.poseOn && M.okR) aR = M.armR;
+
+    const R = R3;
+    R.root.position.y = -bob * 0.012;
+    R.root.rotation.z = M.poseOn ? -M.lean : 0;
+    R.body.scale.set(0.86 / breathe, 0.8 * breathe, 0.74);
+    R.armL.rotation.z = -aL; R.armR.rotation.z = -aR;
+    R.head.rotation.set(S.look.y * 0.32, S.look.x * 0.5, -tilt);
+    R.head.position.x = M.faceOn ? M.yaw * 0.18 : 0;
+    // petals: spin, wiggle when happy, hide the ones that would poke through the body
+    const spin = reduce ? 0 : t * (m === 'excited' || m === 'happy' ? 0.8 : m === 'sleep' ? 0.04 : 0.2);
+    R.petals.rotation.z = -spin;
+    R.petalList.forEach((p, i) => {
+      const a = ((p.userData.a + spin) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+      p.visible = R.petals.visible && Math.abs(a - Math.PI) > 0.75;
+      const grow = m === 'happy' && !reduce ? 1 + Math.sin(t * 10 + i) * 0.15 : 1;
+      p.scale.y = 0.27 * grow;
+    });
+    // star antenna
+    const sway = S.look.x * -0.25 + (reduce ? 0 : Math.sin(t * 3) * 0.06) + (m === 'excited' && !reduce ? Math.sin(t * 14) * 0.2 : 0);
+    R.ant.rotation.z = sway;
+    R.star.rotation.y = reduce ? 0 : t * 1.4;
+    const pulse = (Math.sin(t * (m === 'excited' ? 12 : 3)) + 1) / 2;
+    R.starMat.emissive.setHex(scared ? 0xff5a1f : 0xffb000);
+    R.starMat.emissiveIntensity = m === 'sleep' ? 0.05 : 0.2 + pulse * 0.4;
+    // shadow shrinks while hopping
+    const hop = Math.max(0, -bob) / 30;
+    R.shadow.scale.setScalar(1 - hop * 0.3);
+    R.shadow.position.y = -2.78 + R.root.position.y * 0; // stays on the floor
+
+    paintFace(now);
+    R.gl.render(R.scene, R.cam);
+
+    if (m === 'sleep') {
+      ctx.fillStyle = css('--fg'); ctx.font = `700 ${Math.max(18, h * 0.045)}px ${css('--font-display')}`;
+      for (let i = 0; i < 3; i++) {
+        const p = ((t * 0.4 + i / 3) % 1);
+        ctx.globalAlpha = 1 - p;
+        ctx.fillText('Z', w * 0.62 + p * 40, h * 0.22 - p * 70);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
   // idle wander before camera starts
   function wander(now) {
     if (S.started) return;
@@ -899,11 +1115,11 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     if (S.mood !== 'sleep' && S.mood !== 'dark' && S.mood !== 'listening' && S.mood !== 'thinking' && now > S.moodUntil && S.mood !== 'idle') {
       S.mood = 'idle'; moodEl.textContent = MOODS.idle;
     }
-    draw(now);
+    if (R3) draw3D(now); else draw2D(now);
     requestAnimationFrame(loop);
   }
   // ---- auto-update: compare this build with version.json, served fresh ----
-  const BUILD = '20261102232115';
+  const BUILD = '20261102232811';
   async function latestBuild() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
@@ -929,7 +1145,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     location.replace(location.pathname + '?v=' + (v || Date.now()));
   };
 
-  resize(); requestAnimationFrame(loop);
+  init3D(); resize(); requestAnimationFrame(loop);
 })();
 </script>
 
