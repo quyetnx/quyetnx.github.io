@@ -73,6 +73,8 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
 #start p { max-width: 380px; color: var(--muted); margin: 0; line-height: 1.5; }
 #err { color: #d6453d; max-width: 380px; }
 .update { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 2px solid var(--glow); border-radius: 10px; }
+.mimicrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+button.small { padding: 6px 10px; font-size: 13px; }
 #pmode { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 6px 0 0; }
 @media (max-width: 760px) {
   body { grid-template-columns: 1fr; grid-template-rows: 1fr auto; overflow: auto; }
@@ -112,9 +114,14 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     <div class="label">Mức chuyển động</div>
     <div class="meter"><i id="motion"></i></div>
   </div>
+  <div id="mimicwrap" hidden>
+    <div class="label">Bắt chước</div>
+    <div class="mimicrow"><span id="mimic">Đang tải...</span><button class="ghost small" id="mimicbtn" hidden>Tắt bắt chước</button></div>
+  </div>
   <div>
     <div class="label">Thử chơi với Nắng Mai</div>
     <ul>
+      <li><b>Lắc, gật, nghiêng đầu</b>, nháy mắt, há miệng, cười, giơ tay: Nắng Mai làm theo bạn</li>
       <li><b>Di chuyển</b> qua lại: mắt nhìn theo</li>
       <li><b>Vẫy tay</b> nhanh: Nắng Mai vẫy tay và chào "Hello! Nắng Mai says hi!"</li>
       <li><b>Che camera</b>: Nắng Mai giật mình</li>
@@ -251,6 +258,8 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
       document.getElementById('start').hidden = true;
       S.started = true; S.lastMotion = performance.now();
       setMood('happy', 2500, GREETING);
+      document.getElementById('mimicwrap').hidden = false;
+      loadMimic();
     } catch (err) {
       startPointerMode();
     }
@@ -301,13 +310,114 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
         const nd = Math.sign(dx); if (dir && nd !== dir) flips++; dir = nd;
       }
       if (flips >= 4 && frac > 0.03 && S.mood !== 'happy') { setMood('happy', 3000, WAVE_LINE); S.hist = []; }
-      else if (frac > 0.25 && S.mood === 'idle') setMood('excited', 2000);
+      else if (frac > (M.faceOn ? 0.45 : 0.25) && S.mood === 'idle') setMood('excited', 2000);
     } else {
       S.lookT.x *= 0.98; S.lookT.y *= 0.98;
     }
     if (now - S.lastMotion > 9000 && S.mood !== 'sleep') setMood('sleep', 99999);
   }
 
+
+  // ---- mimic: copy the viewer's head, face and arms (MediaPipe, runs on this device) ----
+  const MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+  const M = { on: true, ready: false, face: null, pose: null, tick: 0, lastFace: 0, lastPose: 0,
+              faceOn: false, poseOn: false, yaw: 0, pitch: 0, roll: 0, base: null,
+              blinkL: 0, blinkR: 0, jaw: 0, smile: 0, brow: 0,
+              armL: 0.55, armR: -0.55, okL: false, okR: false, lean: 0 };
+  const mimicEl = document.getElementById('mimic'), mimicBtn = document.getElementById('mimicbtn');
+  function setMimicStatus(t) { mimicEl.textContent = t; }
+  mimicBtn.onclick = () => {
+    M.on = !M.on; mimicBtn.textContent = M.on ? 'Tắt bắt chước' : 'Bật bắt chước';
+    setMimicStatus(M.on ? (M.ready ? 'Đang bắt chước bạn' : 'Đang tải...') : 'Đã tắt');
+  };
+  async function loadMimic() {
+    setMimicStatus('Đang tải bộ nhận diện...');
+    try {
+      const vision = await import(MP + '/vision_bundle.mjs');
+      const fs = await vision.FilesetResolver.forVisionTasks(MP + '/wasm');
+      const make = delegate => Promise.all([
+        vision.FaceLandmarker.createFromOptions(fs, {
+          baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task', delegate },
+          runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true }),
+        vision.PoseLandmarker.createFromOptions(fs, {
+          baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task', delegate },
+          runningMode: 'VIDEO', numPoses: 1 }),
+      ]);
+      try { [M.face, M.pose] = await make('GPU'); } catch { [M.face, M.pose] = await make('CPU'); }
+      M.ready = true; mimicBtn.hidden = false;
+      setMimicStatus(M.on ? 'Đang bắt chước bạn' : 'Đã tắt');
+    } catch (e) {
+      setMimicStatus('Không tải được bộ nhận diện, Nắng Mai chỉ nhìn theo chuyển động.');
+    }
+  }
+  const sm = (cur, v, a) => cur + (v - cur) * a;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  let lastVideoTime = -1;
+  function track(now) {
+    if (!M.ready || !M.on || video.readyState < 2 || video.currentTime === lastVideoTime) {
+      M.faceOn = M.on && M.ready && now - M.lastFace < 700;
+      M.poseOn = M.on && M.ready && now - M.lastPose < 900;
+      return;
+    }
+    lastVideoTime = video.currentTime;
+    const aspect = (video.videoWidth || 4) / (video.videoHeight || 3);
+    M.tick++;
+    // face every tick
+    try {
+      const r = M.face.detectForVideo(video, now);
+      const f = r.faceLandmarks && r.faceLandmarks[0];
+      if (f) {
+        const P = i => ({ x: 1 - f[i].x, y: f[i].y }); // mirrored, like a mirror
+        let a = P(33), b = P(263); if (a.x > b.x) [a, b] = [b, a];
+        const roll = Math.atan2(b.y - a.y, (b.x - a.x) * aspect);
+        let cl = P(234), cr = P(454); if (cl.x > cr.x) [cl, cr] = [cr, cl];
+        const nose = P(1), chin = P(152);
+        const yaw = ((nose.x - (cl.x + cr.x) / 2) / ((cr.x - cl.x) / 2 || 1));
+        const eyeY = (a.y + b.y) / 2;
+        const ratio = (nose.y - eyeY) / ((chin.y - eyeY) || 1);
+        if (M.base === null) M.base = ratio; else M.base = sm(M.base, ratio, 0.005);
+        const pitch = (ratio - M.base) * 5;
+        M.roll = sm(M.roll, clamp(roll, -0.6, 0.6), 0.45);
+        M.yaw = sm(M.yaw, clamp(yaw * 1.6, -1.2, 1.2), 0.45);
+        M.pitch = sm(M.pitch, clamp(pitch, -1, 1), 0.35);
+        const bs = {};
+        (r.faceBlendshapes && r.faceBlendshapes[0] ? r.faceBlendshapes[0].categories : []).forEach(c => bs[c.categoryName] = c.score);
+        M.blinkL = sm(M.blinkL, bs.eyeBlinkLeft || 0, 0.6);
+        M.blinkR = sm(M.blinkR, bs.eyeBlinkRight || 0, 0.6);
+        M.jaw = sm(M.jaw, bs.jawOpen || 0, 0.5);
+        M.smile = sm(M.smile, ((bs.mouthSmileLeft || 0) + (bs.mouthSmileRight || 0)) / 2, 0.4);
+        M.brow = sm(M.brow, bs.browInnerUp || 0, 0.4);
+        M.lastFace = now; S.lastMotion = now;
+        // show the tracked points in the preview
+        pctx.fillStyle = '#FFD84D';
+        [1, 33, 263, 152].forEach(i => pctx.fillRect((1 - f[i].x) * W - 1, f[i].y * H - 1, 2, 2));
+      }
+    } catch {}
+    // pose every other tick
+    if (M.tick % 2 === 0) {
+      try {
+        const r = M.pose.detectForVideo(video, now);
+        const p = r.landmarks && r.landmarks[0];
+        if (p) {
+          const P = i => ({ x: (1 - p[i].x) * aspect, y: p[i].y, v: p[i].visibility ?? 1 });
+          // the two arms, sorted by which side of the screen their shoulder is on
+          let A = { s: P(11), w: P(15), e: P(13) }, Bm = { s: P(12), w: P(16), e: P(14) };
+          if (A.s.x > Bm.s.x) [A, Bm] = [Bm, A];
+          const ang = arm => Math.atan2(-(arm.w.x - arm.s.x), arm.w.y - arm.s.y);
+          M.okL = A.w.v > 0.5 && A.s.v > 0.5;
+          M.okR = Bm.w.v > 0.5 && Bm.s.v > 0.5;
+          if (M.okL) M.armL = sm(M.armL, ang(A), 0.5);
+          if (M.okR) M.armR = sm(M.armR, ang(Bm), 0.5);
+          if (A.s.v > 0.5 && Bm.s.v > 0.5) M.lean = sm(M.lean, clamp(Math.atan2(Bm.s.y - A.s.y, Bm.s.x - A.s.x), -0.35, 0.35), 0.35);
+          M.lastPose = now; S.lastMotion = now;
+          pctx.fillStyle = '#2A8BE0';
+          [A.s, A.e, A.w, Bm.s, Bm.e, Bm.w].forEach(q => q.v > 0.5 && pctx.fillRect(q.x / aspect * W - 1.5, q.y * H - 1.5, 3, 3));
+        }
+      } catch {}
+    }
+    M.faceOn = now - M.lastFace < 700;
+    M.poseOn = now - M.lastPose < 900;
+  }
 
   // ---- pointer fallback (when camera is blocked) ----
   let pointerMode = false, lastP = null;
@@ -382,7 +492,9 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     const breathe = reduce ? 1 : 1 + Math.sin(t * 2.4) * 0.018;
     ctx.save();
     ctx.translate(w / 2, h * 0.52 + bob * k); ctx.scale(k, k);
-    const tilt = m === 'sleep' ? 0.16 : S.look.x * 0.1 + (m === 'tickled' && !reduce ? Math.sin(t * 25) * 0.09 : 0);
+    let tilt = m === 'sleep' ? 0.16 : S.look.x * 0.1 + (m === 'tickled' && !reduce ? Math.sin(t * 25) * 0.09 : 0);
+    if (M.faceOn && m !== 'sleep') { tilt = M.roll; S.lookT.x = M.yaw; S.lookT.y = M.pitch; }
+    if (M.poseOn) ctx.rotate(M.lean);
 
     // Nắng Mai palette, taken from the school logo (same in both themes)
     const B = { sun: '#FFC21A', sunDeep: '#F7A21B', red: '#EF3B3B', blue: '#2A8BE0', blueDeep: '#1B6FBF',
@@ -419,11 +531,15 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     const armWave = m === 'happy' && !reduce ? Math.sin(t * 13) * 0.5 : 0;
     const scared = m === 'surprised' || m === 'dark';
     const idleSwing = reduce ? 0 : Math.sin(t * 2) * 0.08;
-    drawArm(-86, 178, m === 'happy' ? 2.5 + armWave : scared ? 2.85 : m === 'tickled' ? 1.6 + Math.sin(t*20)*.3 : 0.55 + idleSwing, B);
-    drawArm(86, 178, scared ? -2.85 : m === 'tickled' ? -1.6 - Math.sin(t*20)*.3 : (m === 'excited' && !reduce ? -1.9 + Math.sin(t*14)*.5 : -0.55 - idleSwing), B);
+    let armL = m === 'happy' ? 2.5 + armWave : scared ? 2.85 : m === 'tickled' ? 1.6 + Math.sin(t*20)*.3 : 0.55 + idleSwing;
+    if (M.poseOn && M.okL) armL = M.armL;
+    let armR = scared ? -2.85 : m === 'tickled' ? -1.6 - Math.sin(t*20)*.3 : (m === 'excited' && !reduce ? -1.9 + Math.sin(t*14)*.5 : -0.55 - idleSwing);
+    if (M.poseOn && M.okR) armR = M.armR;
+    drawArm(-86, 178, armL, B);
+    drawArm(86, 178, armR, B);
 
     // big head
-    ctx.save(); ctx.translate(0, -50); ctx.rotate(tilt); ctx.scale(0.94, 0.94);
+    ctx.save(); ctx.translate(M.faceOn ? M.yaw * 26 : 0, -50 + (M.faceOn ? M.pitch * 14 : 0)); ctx.rotate(tilt); ctx.scale(0.94, 0.94);
     // soft sun petals behind the head
     const spin = reduce ? 0 : t * (m === 'excited' || m === 'happy' ? 0.8 : m === 'sleep' ? 0.04 : 0.2);
     ctx.globalAlpha = m === 'sleep' || m === 'dark' ? 0.5 : 1;
@@ -513,8 +629,9 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
         ctx.beginPath(); ctx.arc(ex, ey, 10, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = C.glow; ctx.shadowColor = C.glow;
       } else {
-        const big = m === 'surprised' ? 1.25 : 1;
-        const open = 1 - (S.blink > 0.5 ? (1 - S.blink) * 2 : S.blink) * 0.92;
+        const big = m === 'surprised' || (M.faceOn && M.brow > 0.45) ? 1.25 : 1;
+        let open = 1 - (S.blink > 0.5 ? (1 - S.blink) * 2 : S.blink) * 0.92;
+        if (M.faceOn) open = 1 - clamp(((side < 0 ? M.blinkL : M.blinkR) - 0.15) * 1.6, 0, 0.94);
         const rx = 30 * big, ry = 38 * big * open;
         ctx.beginPath(); ctx.ellipse(ex, ey, rx, Math.max(4, ry), 0, 0, Math.PI * 2); ctx.fill();
         if (ry > 18) { // sparkly highlights
@@ -529,7 +646,12 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     // mouth
     const mx = lx * 0.6, my = 46 + ly * 0.5;
     ctx.lineWidth = 6; ctx.beginPath();
-    if (S.talking && m !== 'sleep') {
+    const copy = M.faceOn && m === 'idle' && !S.talking;
+    if (copy && M.jaw > 0.12) {
+      ctx.ellipse(mx, my, 18 + M.smile * 8, 4 + M.jaw * 30, 0, 0, Math.PI * 2); ctx.fill();
+    } else if (copy && M.smile > 0.35) {
+      ctx.moveTo(mx - 22, my - 8); ctx.arc(mx, my - 8, 22, 0, Math.PI); ctx.closePath(); ctx.fill();
+    } else if (S.talking && m !== 'sleep') {
       const o = 5 + Math.abs(Math.sin(now / 70)) * 12;
       ctx.ellipse(mx, my - 2, 15, o, 0, 0, Math.PI * 2); ctx.fill();
     } else if (m === 'happy' || m === 'tickled' || m === 'excited') {
@@ -556,7 +678,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
   let lastSense = 0;
   function loop(now) {
     wander(now);
-    if (now - lastSense > 66) { sense(now); lastSense = now; }
+    if (now - lastSense > 66) { sense(now); lastSense = now; track(now); }
     if (S.mood !== 'sleep' && S.mood !== 'dark' && now > S.moodUntil && S.mood !== 'idle') {
       S.mood = 'idle'; moodEl.textContent = MOODS.idle;
     }
@@ -564,7 +686,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     requestAnimationFrame(loop);
   }
   // ---- auto-update: compare this build with version.json, served fresh ----
-  const BUILD = '20261102230303';
+  const BUILD = '20261102230800';
   async function latestBuild() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
