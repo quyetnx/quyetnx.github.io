@@ -123,7 +123,7 @@ button.small { padding: 6px 10px; font-size: 13px; }
     <ul>
       <li><b>Lắc, gật, nghiêng đầu</b>, nháy mắt, há miệng, cười, giơ tay: Nắng Mai làm theo bạn</li>
       <li><b>Di chuyển</b> qua lại: mắt nhìn theo</li>
-      <li><b>Vẫy tay</b> nhanh: Nắng Mai vẫy tay và chào "Hello! Nắng Mai says hi!"</li>
+      <li><b>Vẫy tay</b> nhanh: Nắng Mai vẫy tay, chào "Hello! Nắng Mai says hi!" rồi nói "Welcome to Nắng Mai!"</li>
       <li><b>Che camera</b>: Nắng Mai giật mình</li>
       <li><b>Ngồi yên</b> lâu: Nắng Mai ngủ</li>
       <li><b>Bấm vào Nắng Mai</b>: cù lét</li>
@@ -162,6 +162,7 @@ button.small { padding: 6px 10px; font-size: 13px; }
   };
   const WAVE_LINE = 'Hello! Nắng Mai says hi!';
   const GREETING = "Hi! I'm Nắng Mai!";
+  const WELCOME_LINE = 'Welcome to Nắng Mai!';
   const LINES = {
     happy: ['Hello there!', 'Hi friend!', 'I see you!'],
     surprised: ['Whoa! Who is that?', 'Oh! You scared me!'],
@@ -207,6 +208,24 @@ button.small { padding: 6px 10px; font-size: 13px; }
       u.onend = u.onerror = () => { S.talking = false; };
       return u;
   }
+  function sayNext(t, ms = 2600) {
+    let shown = false;
+    const show = () => {
+      if (shown) return; shown = true;
+      bubble.textContent = t; bubble.classList.remove('hide');
+      clearTimeout(bubbleTimer); bubbleTimer = setTimeout(() => bubble.classList.add('hide'), ms);
+    };
+    if (soundOn && synth && S.started) {
+      try {
+        const u = makeUtterance(t);
+        const start = u.onstart; u.onstart = () => { start(); show(); };
+        lastSpoken = { t, at: performance.now() };
+        synth.speak(u); // queued behind the greeting, no cancel
+      } catch {}
+      setTimeout(show, 4500); // in case the voice never starts
+    } else setTimeout(show, 2000);
+  }
+  function waveHello() { setMood('happy', 5000, WAVE_LINE); sayNext(WELCOME_LINE); }
   function say(t, ms = 2200) {
     speak(t);
     bubble.textContent = t; bubble.classList.remove('hide');
@@ -309,7 +328,7 @@ button.small { padding: 6px 10px; font-size: 13px; }
         if (Math.abs(dx) < 0.025) continue;
         const nd = Math.sign(dx); if (dir && nd !== dir) flips++; dir = nd;
       }
-      if (flips >= 4 && frac > 0.03 && S.mood !== 'happy') { setMood('happy', 3000, WAVE_LINE); S.hist = []; }
+      if (flips >= 4 && frac > 0.03 && S.mood !== 'happy') { waveHello(); S.hist = []; }
       else if (frac > (M.faceOn ? 0.45 : 0.25) && S.mood === 'idle') setMood('excited', 2000);
     } else {
       S.lookT.x *= 0.98; S.lookT.y *= 0.98;
@@ -451,7 +470,7 @@ button.small { padding: 6px 10px; font-size: 13px; }
       if (Math.abs(dx) < 0.01) continue;
       const nd = Math.sign(dx); if (dir && nd !== dir) flips++; dir = nd;
     }
-    if (flips >= 4 && S.mood !== 'happy') { setMood('happy', 3000, WAVE_LINE); S.hist = []; }
+    if (flips >= 4 && S.mood !== 'happy') { waveHello(); S.hist = []; }
     else if (sp > 3 && S.mood === 'idle') setMood('excited', 1500);
   });
   setInterval(() => {
@@ -686,7 +705,7 @@ button.small { padding: 6px 10px; font-size: 13px; }
     requestAnimationFrame(loop);
   }
   // ---- auto-update: compare this build with version.json, served fresh ----
-  const BUILD = '20261102230800';
+  const BUILD = '20261102231331';
   async function latestBuild() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
