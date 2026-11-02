@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache">
 <title>Robot Bíp</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Be+Vietnam+Pro:wght@400;600&display=swap">
@@ -71,6 +72,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
 }
 #start p { max-width: 380px; color: var(--muted); margin: 0; line-height: 1.5; }
 #err { color: #d6453d; max-width: 380px; }
+.update { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 2px solid var(--glow); border-radius: 10px; }
 #pmode { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 6px 0 0; }
 @media (max-width: 760px) {
   body { grid-template-columns: 1fr; grid-template-rows: 1fr auto; overflow: auto; }
@@ -119,6 +121,10 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
       <li><b>Bấm vào Bíp</b>: cù lét</li>
       <li>Bíp <b>nói thành tiếng</b> mọi câu trong bong bóng</li>
     </ul>
+  </div>
+  <div id="update" class="update" hidden>
+    <span>Bíp vừa có bản mới.</span>
+    <button id="reload">Tải bản mới</button>
   </div>
   <button class="ghost" id="sound">Âm thanh: bật</button>
   <p class="sub" id="voicenote" hidden>Máy này chưa có giọng đọc tiếng Việt nên Bíp nói bằng giọng mặc định. Chrome hoặc Edge thường có sẵn giọng tiếng Việt.</p>
@@ -366,9 +372,6 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     ctx.beginPath(); ctx.ellipse(0, 250 - bob, 150, 18, 0, 0, Math.PI * 2); ctx.fill();
 
     // arms
-    const armWave = m === 'happy' && !reduce ? Math.sin(t * 12) * 0.6 : 0;
-    drawArm(-135, 70, m === 'happy' ? -2.2 + armWave : (m === 'surprised' || m === 'dark' ? -2.6 : 0.25 + Math.sin(t*2)*.05), C);
-    drawArm(135, 70, m === 'surprised' || m === 'dark' ? 2.6 : (m === 'excited' && !reduce ? -0.3 + Math.sin(t*14)*.5 : -0.25 - Math.sin(t*2)*.05), C, true);
 
     // torso
     ctx.fillStyle = C.shell; rr(-115, 40, 230, 190, 40); ctx.fill();
@@ -400,6 +403,12 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     ctx.fillStyle = C.screen; rr(-135, -88, 270, 156, 36); ctx.fill();
     drawFace(now, C);
     ctx.restore();
+
+    // arms: drawn last so they sit in front; positive angle swings the left arm outward/up, negative the right
+    const armWave = m === 'happy' && !reduce ? Math.sin(t * 12) * 0.45 : 0;
+    const scared = m === 'surprised' || m === 'dark';
+    drawArm(-128, 62, m === 'happy' ? 2.35 + armWave : scared ? 2.7 : 0.3 + Math.sin(t*2)*.05, C);
+    drawArm(128, 62, scared ? -2.7 : (m === 'excited' && !reduce ? -1.2 + Math.sin(t*14)*.5 : -0.3 - Math.sin(t*2)*.05), C, true);
 
     ctx.restore();
 
@@ -480,6 +489,33 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     draw(now);
     requestAnimationFrame(loop);
   }
+  // ---- auto-update: compare this build with version.json, served fresh ----
+  const BUILD = '20261102224120';
+  async function latestBuild() {
+    try {
+      const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return null;
+      return (await r.json()).v || null;
+    } catch { return null; }
+  }
+  async function checkOnLoad() {
+    const v = await latestBuild();
+    if (!v || v === BUILD) return;
+    const q = new URLSearchParams(location.search);
+    if (q.get('v') === v) return; // already asked for it; the CDN is still catching up
+    q.set('v', v);
+    location.replace(location.pathname + '?' + q.toString() + location.hash);
+  }
+  checkOnLoad();
+  setInterval(async () => {
+    const v = await latestBuild();
+    if (v && v !== BUILD) document.getElementById('update').hidden = false;
+  }, 60000);
+  document.getElementById('reload').onclick = async () => {
+    const v = await latestBuild();
+    location.replace(location.pathname + '?v=' + (v || Date.now()));
+  };
+
   resize(); requestAnimationFrame(loop);
 })();
 </script>
