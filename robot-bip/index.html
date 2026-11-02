@@ -153,6 +153,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     sleep: 'Ngủ gật', tickled: 'Nhột!', dark: 'Sợ bóng tối',
   };
   const WAVE_LINE = 'Hello! Nắng Mai says hi!';
+  const GREETING = "Hi! I'm Nắng Mai!";
   const LINES = {
     happy: ['Hello there!', 'Hi friend!', 'I see you!'],
     surprised: ['Whoa! Who is that?', 'Oh! You scared me!'],
@@ -176,10 +177,19 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     if (note && vs.length) note.hidden = !!viVoice;
   }
   if (synth) { pickVoice(); synth.onvoiceschanged = pickVoice; }
-  function speak(t) {
-    if (!soundOn || !synth || !S.started || /^z+/i.test(t)) return;
-    try {
-      synth.cancel();
+  // iPad/iPhone Safari only lets a page talk after its first utterance is started inside a tap,
+  // and it can drop an utterance queued right after cancel(); so speak in the tap, and delay after cancel.
+  let lastSpoken = { t: '', at: 0 };
+  function speak(t, force) {
+    if (!soundOn || !synth || (!S.started && !force) || /^z+/i.test(t)) return;
+    const now = performance.now();
+    if (lastSpoken.t === t && now - lastSpoken.at < 4000) return; // already said it (e.g. in the tap)
+    lastSpoken = { t, at: now };
+    if (!enVoice) pickVoice();
+    const go = () => { try { synth.resume(); synth.speak(makeUtterance(t)); } catch {} };
+    if (synth.speaking || synth.pending) { synth.cancel(); setTimeout(go, 120); } else go();
+  }
+  function makeUtterance(t) {
       const u = new SpeechSynthesisUtterance(t);
       // every line is English; strip Vietnamese marks so the English voice can read the name
       u.text = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd');
@@ -187,8 +197,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
       u.pitch = 1.7; u.rate = 1.08; u.volume = 1;
       u.onstart = () => { S.talking = true; };
       u.onend = u.onerror = () => { S.talking = false; };
-      synth.speak(u);
-    } catch {}
+      return u;
   }
   function say(t, ms = 2200) {
     speak(t);
@@ -233,13 +242,14 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
       audio.resume && audio.resume();
       chirp('idle');
     } catch {}
+    speak(GREETING, true); // must happen inside this tap for iPad/iPhone
     try {
       if (!navigator.mediaDevices) throw new Error('no camera');
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, facingMode: 'user' }, audio: false });
       video.srcObject = stream; await video.play();
       document.getElementById('start').hidden = true;
       S.started = true; S.lastMotion = performance.now();
-      setMood('happy', 2500, "Hi! I'm Nắng Mai!");
+      setMood('happy', 2500, GREETING);
     } catch (err) {
       startPointerMode();
     }
@@ -305,7 +315,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     document.getElementById('start').hidden = true;
     document.getElementById('pmode').hidden = false;
     pctx.fillStyle = css('--screen'); pctx.fillRect(0, 0, W, H);
-    setMood('happy', 2500, "Hi! I'm Nắng Mai!");
+    setMood('happy', 2500, GREETING);
   }
   addEventListener('pointermove', e => {
     if (!pointerMode) return;
@@ -341,6 +351,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
   cvs.addEventListener('pointerdown', () => {
     try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume && audio.resume(); } catch {}
     S.lastMotion = performance.now(); setMood('tickled', 1800);
+    if (synth && !synth.speaking) try { synth.resume(); } catch {}
   });
 
   // ---- drawing ----
@@ -493,7 +504,7 @@ button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
     requestAnimationFrame(loop);
   }
   // ---- auto-update: compare this build with version.json, served fresh ----
-  const BUILD = '20261102224519';
+  const BUILD = '20261102224833';
   async function latestBuild() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
