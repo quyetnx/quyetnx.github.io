@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Robot Bíp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Be+Vietnam+Pro:wght@400;600&display=swap">
+<style>
+/* Layout: one-screen stage, robot centered, camera preview + status in a side rail */
+:root {
+  --bg: #e8eef2;
+  --panel: #f7fafb;
+  --fg: #1d2a33;
+  --muted: #5d6f7b;
+  --shell: #c9d6de;
+  --shell-dark: #9fb2be;
+  --screen: #0f1d24;
+  --glow: #3fe0c5;
+  --warn: #ffb347;
+  --font-display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Be Vietnam Pro", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #0d1418; --panel: #152027; --fg: #dde7ec; --muted: #8aa0ad;
+          --shell: #3a4a54; --shell-dark: #27343c; --screen: #050b0e; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #0d1418; --panel: #152027; --fg: #dde7ec; --muted: #8aa0ad;
+          --shell: #3a4a54; --shell-dark: #27343c; --screen: #050b0e; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px;
+  display: grid; grid-template-columns: 1fr 300px; overflow: hidden;
+  padding-left: max(0px, env(safe-area-inset-left, 0px)); padding-right: max(0px, env(safe-area-inset-right, 0px));
+}
+.err { color: #d6453d; }
+#stage { position: relative; min-width: 0; }
+#robot { width: 100%; height: 100%; display: block; }
+#bubble {
+  position: absolute; left: 50%; top: 6%; transform: translateX(-50%);
+  background: var(--panel); border: 2px solid var(--fg); border-radius: 14px;
+  padding: 10px 18px; font-family: var(--font-display); font-weight: 700; font-size: 20px;
+  white-space: nowrap; transition: opacity .25s;
+}
+#bubble.hide { opacity: 0; }
+aside {
+  background: var(--panel); padding: 20px; display: flex; flex-direction: column; gap: 16px;
+  border-left: 1px solid var(--shell); overflow-y: auto;
+}
+h1 { font-family: var(--font-display); font-size: 26px; margin: 0; letter-spacing: .02em; }
+.sub { color: var(--muted); margin: 4px 0 0; line-height: 1.5; }
+.cam { position: relative; border-radius: 10px; overflow: hidden; background: var(--screen); aspect-ratio: 4/3; }
+.cam canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 6px; }
+.state { font-family: var(--font-display); font-size: 22px; font-weight: 700; }
+.meter { height: 8px; background: var(--shell); border-radius: 4px; overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0; background: var(--glow); transition: width .1s; }
+ul { margin: 0; padding-left: 18px; line-height: 1.7; color: var(--muted); }
+ul b { color: var(--fg); font-weight: 600; }
+button {
+  font: 600 15px var(--font-body); padding: 10px 14px; border-radius: 8px; cursor: pointer;
+  border: 2px solid var(--fg); background: var(--fg); color: var(--bg);
+}
+button.ghost { background: transparent; color: var(--fg); }
+button:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
+#start {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; background: color-mix(in srgb, var(--bg) 85%, transparent); text-align: center; padding: 20px;
+}
+#start p { max-width: 380px; color: var(--muted); margin: 0; line-height: 1.5; }
+#err { color: #d6453d; max-width: 380px; }
+#pmode { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 6px 0 0; }
+@media (max-width: 760px) {
+  body { grid-template-columns: 1fr; grid-template-rows: 1fr auto; overflow: auto; }
+  #stage { min-height: 60vh; }
+  aside { border-left: 0; border-top: 1px solid var(--shell); }
+  .cam { max-width: 220px; }
+}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="robot"></canvas>
+  <div id="bubble" class="hide"></div>
+  <div id="start">
+    <h1>Robot Bíp</h1>
+    <p>Bíp nhìn bạn qua camera: mắt dõi theo chuyển động, vẫy tay thì Bíp chào lại, che camera thì Bíp giật mình, bỏ đi lâu thì Bíp ngủ gật.</p>
+    <button id="go">Đánh thức Bíp</button>
+    <p id="err"></p>
+  </div>
+</div>
+<aside>
+  <div>
+    <h1>Robot Bíp</h1>
+    <p class="sub">Mọi xử lý hình ảnh chạy ngay trên máy bạn, không gửi đi đâu cả.</p>
+  </div>
+  <div>
+    <div class="label">Bíp đang thấy</div>
+    <div class="cam"><canvas id="preview" width="80" height="60"></canvas></div>
+    <p id="pmode" hidden>Camera bị chặn ở đây, Bíp đang dõi theo chuột hoặc ngón tay của bạn. Lắc chuột qua lại thật nhanh để vẫy chào.</p>
+  </div>
+  <div>
+    <div class="label">Tâm trạng</div>
+    <div class="state" id="mood">Đang chờ</div>
+  </div>
+  <div>
+    <div class="label">Mức chuyển động</div>
+    <div class="meter"><i id="motion"></i></div>
+  </div>
+  <div>
+    <div class="label">Thử chơi với Bíp</div>
+    <ul>
+      <li><b>Di chuyển</b> qua lại: mắt nhìn theo</li>
+      <li><b>Vẫy tay</b> nhanh: Bíp vẫy chào</li>
+      <li><b>Che camera</b>: Bíp giật mình</li>
+      <li><b>Ngồi yên</b> lâu: Bíp ngủ</li>
+      <li><b>Bấm vào Bíp</b>: cù lét</li>
+    </ul>
+  </div>
+  <button class="ghost" id="sound">Âm thanh: bật</button>
+</aside>
+<video id="video" playsinline muted hidden></video>
+<script>
+(() => {
+  const W = 80, H = 60;
+  const cvs = document.getElementById('robot'), ctx = cvs.getContext('2d');
+  const prev = document.getElementById('preview'), pctx = prev.getContext('2d', { willReadFrequently: true });
+  const video = document.getElementById('video');
+  const bubble = document.getElementById('bubble'), moodEl = document.getElementById('mood'), meter = document.getElementById('motion');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+  // ---- state ----
+  const S = {
+    mood: 'idle', moodUntil: 0,
+    look: { x: 0, y: 0 }, lookT: { x: 0, y: 0 },
+    motion: 0, lastMotion: performance.now(),
+    blink: 0, nextBlink: performance.now() + 2000,
+    wave: 0, bounce: 0, hist: [], dark: false, started: false,
+  };
+  let prevGray = null, soundOn = true, audio = null;
+  const MOODS = {
+    idle: 'Tò mò', happy: 'Vui quá!', excited: 'Phấn khích', surprised: 'Giật mình',
+    sleep: 'Ngủ gật', tickled: 'Nhột!', dark: 'Sợ bóng tối',
+  };
+  const LINES = {
+    happy: ['Xin chào!', 'Chào bạn nha!', 'Hi hi, thấy rồi!'],
+    surprised: ['Á! Ai đó?', 'Ối giật cả mình!'],
+    dark: ['Ai tắt đèn vậy?', 'Tối quá, Bíp sợ...'],
+    sleep: ['Zzz...'],
+    wake: ['Ơ, bạn quay lại rồi!', 'Bíp tỉnh rồi đây!'],
+    tickled: ['Hí hí, nhột!', 'Đừng cù Bíp mà!'],
+    excited: ['Nhảy hăng quá!', 'Woa, nhanh ghê!'],
+  };
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  let bubbleTimer;
+  function say(t, ms = 2200) {
+    bubble.textContent = t; bubble.classList.remove('hide');
+    clearTimeout(bubbleTimer); bubbleTimer = setTimeout(() => bubble.classList.add('hide'), ms);
+  }
+  function setMood(m, ms = 2500, line) {
+    const now = performance.now();
+    if (S.mood === m && now < S.moodUntil) { S.moodUntil = now + ms; return; }
+    const wasSleep = S.mood === 'sleep';
+    S.mood = m; S.moodUntil = now + ms;
+    moodEl.textContent = MOODS[m];
+    if (line) say(line);
+    else if (wasSleep && m !== 'sleep') say(pick(LINES.wake));
+    else if (LINES[m]) say(pick(LINES[m]), m === 'sleep' ? 99999 : 2200);
+    chirp(m);
+  }
+
+  // ---- sound ----
+  function chirp(m) {
+    if (!soundOn || !audio) return;
+    const seq = { happy: [660, 880, 990], surprised: [900, 400], dark: [300, 220], sleep: [400, 300, 200],
+                  tickled: [800, 1000, 800, 1100], excited: [700, 900], idle: [600] }[m] || [600];
+    seq.forEach((f, i) => {
+      const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime + i * 0.09;
+      o.type = 'square'; o.frequency.setValueAtTime(f, t);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.06, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+      o.connect(g).connect(audio.destination); o.start(t); o.stop(t + 0.09);
+    });
+  }
+  document.getElementById('sound').onclick = e => {
+    soundOn = !soundOn; e.target.textContent = 'Âm thanh: ' + (soundOn ? 'bật' : 'tắt');
+  };
+
+  // ---- camera ----
+  document.getElementById('go').onclick = async () => {
+    try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
+    try {
+      if (!navigator.mediaDevices) throw new Error('no camera');
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240, facingMode: 'user' }, audio: false });
+      video.srcObject = stream; await video.play();
+      document.getElementById('start').hidden = true;
+      S.started = true; S.lastMotion = performance.now();
+      setMood('happy', 2500, 'Xin chào! Mình là Bíp!');
+    } catch (err) {
+      startPointerMode();
+    }
+  };
+
+  function sense(now) {
+    if (!S.started || video.readyState < 2) return;
+    pctx.save(); pctx.translate(W, 0); pctx.scale(-1, 1); pctx.drawImage(video, 0, 0, W, H); pctx.restore();
+    const img = pctx.getImageData(0, 0, W, H), d = img.data;
+    const gray = new Uint8ClampedArray(W * H);
+    let bright = 0;
+    for (let i = 0; i < W * H; i++) { const v = (d[i*4] * .3 + d[i*4+1] * .59 + d[i*4+2] * .11) | 0; gray[i] = v; bright += v; }
+    bright /= W * H;
+    let count = 0, sx = 0, sy = 0;
+    if (prevGray) {
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (Math.abs(gray[i] - prevGray[i]) > 28) {
+          count++; sx += x; sy += y;
+          d[i*4] = 63; d[i*4+1] = 224; d[i*4+2] = 197; // tint moving pixels
+        }
+      }
+      pctx.putImageData(img, 0, 0);
+    }
+    prevGray = gray;
+    const frac = count / (W * H);
+    S.motion += (frac - S.motion) * 0.3;
+    meter.style.width = Math.min(100, S.motion * 600) + '%';
+
+    // darkness → covered camera
+    if (bright < 22) {
+      if (!S.dark) { S.dark = true; setMood('surprised', 1200); setTimeout(() => S.dark && setMood('dark', 99999), 900); }
+      return;
+    } else if (S.dark) { S.dark = false; setMood('happy', 2000, 'Phù, sáng lại rồi!'); }
+
+    if (count > 12) {
+      const cx = sx / count / W, cy = sy / count / H;
+      S.lookT.x = (cx - 0.5) * 2; S.lookT.y = (cy - 0.5) * 2;
+      S.lastMotion = now;
+      if (S.mood === 'sleep') setMood('surprised', 1500);
+      // wave detection: count horizontal direction reversals of the centroid
+      S.hist.push({ t: now, x: cx });
+      S.hist = S.hist.filter(h => now - h.t < 1400);
+      let flips = 0, dir = 0;
+      for (let i = 1; i < S.hist.length; i++) {
+        const dx = S.hist[i].x - S.hist[i-1].x;
+        if (Math.abs(dx) < 0.025) continue;
+        const nd = Math.sign(dx); if (dir && nd !== dir) flips++; dir = nd;
+      }
+      if (flips >= 4 && frac > 0.03 && S.mood !== 'happy') { setMood('happy', 3000); S.hist = []; }
+      else if (frac > 0.25 && S.mood === 'idle') setMood('excited', 2000);
+    } else {
+      S.lookT.x *= 0.98; S.lookT.y *= 0.98;
+    }
+    if (now - S.lastMotion > 9000 && S.mood !== 'sleep') setMood('sleep', 99999);
+  }
+
+
+  // ---- pointer fallback (when camera is blocked) ----
+  let pointerMode = false, lastP = null;
+  function startPointerMode() {
+    pointerMode = true; S.started = true; S.lastMotion = performance.now();
+    document.getElementById('start').hidden = true;
+    document.getElementById('pmode').hidden = false;
+    pctx.fillStyle = css('--screen'); pctx.fillRect(0, 0, W, H);
+    setMood('happy', 2500, 'Xin chào! Mình là Bíp!');
+  }
+  addEventListener('pointermove', e => {
+    if (!pointerMode) return;
+    const now = performance.now();
+    const r = cvs.getBoundingClientRect();
+    const cx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    const cy = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    S.lookT.x = (cx - 0.5) * 2; S.lookT.y = (cy - 0.5) * 2;
+    const sp = lastP ? Math.hypot(cx - lastP.x, cy - lastP.y) / Math.max(1, now - lastP.t) * 1000 : 0;
+    lastP = { x: cx, y: cy, t: now };
+    S.motion += (Math.min(0.2, sp * 0.05) - S.motion) * 0.3;
+    meter.style.width = Math.min(100, S.motion * 600) + '%';
+    // mini radar dot in the preview panel
+    pctx.fillStyle = css('--screen'); pctx.globalAlpha = 0.25; pctx.fillRect(0, 0, W, H); pctx.globalAlpha = 1;
+    pctx.fillStyle = css('--glow'); pctx.fillRect(cx * W - 2, cy * H - 2, 4, 4);
+    S.lastMotion = now;
+    if (S.mood === 'sleep') setMood('surprised', 1500);
+    S.hist.push({ t: now, x: cx }); S.hist = S.hist.filter(h => now - h.t < 1200);
+    let flips = 0, dir = 0;
+    for (let i = 1; i < S.hist.length; i++) {
+      const dx = S.hist[i].x - S.hist[i-1].x;
+      if (Math.abs(dx) < 0.01) continue;
+      const nd = Math.sign(dx); if (dir && nd !== dir) flips++; dir = nd;
+    }
+    if (flips >= 4 && S.mood !== 'happy') { setMood('happy', 3000); S.hist = []; }
+    else if (sp > 3 && S.mood === 'idle') setMood('excited', 1500);
+  });
+  setInterval(() => {
+    if (pointerMode && performance.now() - S.lastMotion > 9000 && S.mood !== 'sleep') setMood('sleep', 99999);
+  }, 500);
+
+  // ---- tickle ----
+  cvs.addEventListener('pointerdown', () => {
+    if (!audio) try { audio = new AudioContext(); } catch {}
+    S.lastMotion = performance.now(); setMood('tickled', 1800);
+  });
+
+  // ---- drawing ----
+  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+  function resize() {
+    const r = cvs.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+    cvs.width = r.width * dpr; cvs.height = r.height * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  addEventListener('resize', resize);
+
+  function draw(now) {
+    const w = cvs.clientWidth, h = cvs.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+    const C = { shell: css('--shell'), dark: css('--shell-dark'), screen: css('--screen'), glow: css('--glow'), warn: css('--warn'), fg: css('--fg') };
+    const m = S.mood, t = now / 1000;
+    const k = Math.min(w / 520, h / 600);
+    const ease = reduce ? 1 : 0.12;
+    S.look.x += (S.lookT.x - S.look.x) * ease; S.look.y += (S.lookT.y - S.look.y) * ease;
+
+    // body bob
+    let bob = Math.sin(t * 2) * 4;
+    if (m === 'excited' || m === 'tickled') bob = Math.sin(t * 18) * 8;
+    if (m === 'sleep') bob = Math.sin(t * 1.2) * 6 + 10;
+    if (m === 'surprised') bob = -14;
+    if (reduce) bob = 0;
+    ctx.save();
+    ctx.translate(w / 2, h * 0.56 + bob * k); ctx.scale(k, k);
+    const tilt = m === 'sleep' ? 0.12 : S.look.x * 0.08 + (m === 'tickled' && !reduce ? Math.sin(t * 25) * 0.08 : 0);
+
+    // shadow
+    ctx.fillStyle = 'rgba(0,0,0,.12)';
+    ctx.beginPath(); ctx.ellipse(0, 250 - bob, 150, 18, 0, 0, Math.PI * 2); ctx.fill();
+
+    // arms
+    const armWave = m === 'happy' && !reduce ? Math.sin(t * 12) * 0.6 : 0;
+    drawArm(-135, 70, m === 'happy' ? -2.2 + armWave : (m === 'surprised' || m === 'dark' ? -2.6 : 0.25 + Math.sin(t*2)*.05), C);
+    drawArm(135, 70, m === 'surprised' || m === 'dark' ? 2.6 : (m === 'excited' && !reduce ? -0.3 + Math.sin(t*14)*.5 : -0.25 - Math.sin(t*2)*.05), C, true);
+
+    // torso
+    ctx.fillStyle = C.shell; rr(-115, 40, 230, 190, 40); ctx.fill();
+    ctx.fillStyle = C.dark; rr(-60, 90, 120, 80, 16); ctx.fill();
+    // chest lights = motion level
+    for (let i = 0; i < 5; i++) {
+      const on = S.motion * 25 > i || m === 'excited';
+      ctx.fillStyle = on ? C.glow : C.screen;
+      ctx.beginPath(); ctx.arc(-40 + i * 20, 130, 7, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // neck
+    ctx.fillStyle = C.dark; rr(-30, 20, 60, 30, 8); ctx.fill();
+
+    // head
+    ctx.save(); ctx.translate(0, -70); ctx.rotate(tilt);
+    // antenna
+    ctx.strokeStyle = C.dark; ctx.lineWidth = 8; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, -110); ctx.quadraticCurveTo(S.look.x * -20, -150, S.look.x * -10, -175); ctx.stroke();
+    const pulse = (Math.sin(t * (m === 'excited' ? 12 : 3)) + 1) / 2;
+    ctx.fillStyle = m === 'dark' || m === 'surprised' ? C.warn : C.glow;
+    ctx.globalAlpha = m === 'sleep' ? 0.3 : 0.5 + pulse * 0.5;
+    ctx.beginPath(); ctx.arc(S.look.x * -10, -180, 14, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    // ears
+    ctx.fillStyle = C.dark; rr(-185, -40, 30, 70, 12); ctx.fill(); rr(155, -40, 30, 70, 12); ctx.fill();
+    // shell + screen
+    ctx.fillStyle = C.shell; rr(-165, -115, 330, 210, 56); ctx.fill();
+    ctx.fillStyle = C.screen; rr(-135, -88, 270, 156, 36); ctx.fill();
+    drawFace(now, C);
+    ctx.restore();
+
+    ctx.restore();
+
+    // sleep Zs
+    if (m === 'sleep') {
+      ctx.fillStyle = C.fg; ctx.font = `700 ${28 * k}px ${css('--font-display')}`;
+      for (let i = 0; i < 3; i++) {
+        const p = ((t * 0.4 + i / 3) % 1);
+        ctx.globalAlpha = 1 - p;
+        ctx.fillText('Z', w / 2 + (150 + p * 60) * k, h * 0.56 + (-200 - p * 120) * k);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function drawArm(x, y, ang, C, right) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+    ctx.fillStyle = C.dark; rr(-14, 0, 28, 110, 14); ctx.fill();
+    ctx.fillStyle = C.shell; ctx.beginPath(); ctx.arc(0, 118, 24, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawFace(now, C) {
+    const m = S.mood;
+    // blink
+    if (now > S.nextBlink) { S.blink = 1; S.nextBlink = now + 2500 + Math.random() * 3000; }
+    S.blink = Math.max(0, S.blink - 0.12);
+    const lx = S.look.x * 22, ly = S.look.y * 14;
+    ctx.fillStyle = C.glow; ctx.strokeStyle = C.glow; ctx.lineCap = 'round';
+    ctx.shadowColor = C.glow; ctx.shadowBlur = 14;
+    for (const side of [-1, 1]) {
+      const ex = side * 58 + lx, ey = -18 + ly;
+      if (m === 'sleep') {
+        ctx.lineWidth = 7; ctx.beginPath(); ctx.arc(ex, ey - 4, 20, 0.2, Math.PI - 0.2); ctx.stroke();
+      } else if (m === 'happy' || m === 'tickled') {
+        ctx.lineWidth = 9; ctx.beginPath(); ctx.arc(ex, ey + 10, 22, Math.PI + 0.3, -0.3); ctx.stroke();
+      } else if (m === 'dark') {
+        ctx.fillStyle = C.warn; ctx.shadowColor = C.warn;
+        ctx.beginPath(); ctx.arc(ex, ey, 9, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = C.glow; ctx.shadowColor = C.glow;
+      } else {
+        const big = m === 'surprised' ? 1.35 : m === 'excited' ? 1.15 : 1;
+        const eh = 52 * big * (1 - (S.blink > 0.5 ? (1 - S.blink) * 2 : S.blink) * 0.9);
+        rr(ex - 18 * big, ey - eh / 2, 36 * big, Math.max(5, eh), 16); ctx.fill();
+        if (eh > 20) {
+          ctx.shadowBlur = 0; ctx.fillStyle = C.screen;
+          ctx.beginPath(); ctx.arc(ex + S.look.x * 6 + 6, ey - eh * 0.2 + S.look.y * 4, 6 * big, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = C.glow; ctx.shadowBlur = 14;
+        }
+      }
+    }
+    // mouth
+    const mx = lx * 0.6, my = 38 + ly * 0.5;
+    ctx.lineWidth = 7; ctx.beginPath();
+    if (m === 'happy' || m === 'tickled' || m === 'excited') ctx.arc(mx, my - 8, 22, 0.25, Math.PI - 0.25);
+    else if (m === 'surprised') { ctx.arc(mx, my, 12, 0, Math.PI * 2); }
+    else if (m === 'dark') { ctx.moveTo(mx - 20, my); for (let i = 1; i <= 4; i++) ctx.lineTo(mx - 20 + i * 10, my + (i % 2 ? -6 : 0)); }
+    else if (m === 'sleep') { ctx.ellipse(mx, my, 8, 5 + Math.sin(now / 600) * 2, 0, 0, Math.PI * 2); }
+    else { ctx.moveTo(mx - 16, my); ctx.quadraticCurveTo(mx, my + 8, mx + 16, my); }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // idle wander before camera starts
+  function wander(now) {
+    if (S.started) return;
+    S.lookT.x = Math.sin(now / 1700) * 0.8; S.lookT.y = Math.sin(now / 2300) * 0.4;
+  }
+
+  let lastSense = 0;
+  function loop(now) {
+    wander(now);
+    if (now - lastSense > 66) { sense(now); lastSense = now; }
+    if (S.mood !== 'sleep' && S.mood !== 'dark' && now > S.moodUntil && S.mood !== 'idle') {
+      S.mood = 'idle'; moodEl.textContent = MOODS.idle;
+    }
+    draw(now);
+    requestAnimationFrame(loop);
+  }
+  resize(); requestAnimationFrame(loop);
+})();
+</script>
+
+</body>
+</html>
