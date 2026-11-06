@@ -164,6 +164,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     <ul>
       <li>Nắng Mai chỉ theo <b>một người gần camera nhất</b></li>
       <li><b>Xoay người</b> một vòng: Nắng Mai xoay theo</li>
+      <li><b>Gập tay, đá chân, ngồi xổm, nhảy, đi sang trái phải</b>: Nắng Mai làm y hệt</li>
       <li><b>Lắc, gật, nghiêng đầu</b>, nháy mắt, há miệng, cười, giơ tay: Nắng Mai làm theo bạn</li>
       <li><b>Di chuyển</b> qua lại: mắt nhìn theo</li>
       <li><b>Vẫy tay</b> nhanh: Nắng Mai vẫy tay, chào "Hello! Nắng Mai says hi!" rồi nói "Welcome to Nắng Mai!"</li>
@@ -401,7 +402,9 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
               blinkL: 0, blinkR: 0, jaw: 0, smile: 0, brow: 0,
               armL: 0.55, armR: -0.55, okL: false, okR: false, lean: 0,
               target: null, faceCount: 0,
-              bodyC: null, bodyW: 0, lastBody: 0, wristHist: [], spin: 0, spinShown: 0, prevTheta: null, spinHist: [], lastSpinCheer: 0 };
+              bodyC: null, bodyW: 0, lastBody: 0, wristHist: [],
+              foreL: 0, foreR: 0, thighL: 0, thighR: 0, shinL: 0, shinR: 0, okLegL: false, okLegR: false,
+              posX: 0, posY: 0, baseY: null, spin: 0, spinShown: 0, prevTheta: null, spinHist: [], lastSpinCheer: 0 };
   const mimicEl = document.getElementById('mimic'), mimicBtn = document.getElementById('mimicbtn');
   function setMimicStatus(t) { mimicEl.textContent = t; }
   mimicBtn.onclick = () => {
@@ -549,8 +552,34 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
           const ang = arm => Math.atan2(-(arm.w.x - arm.s.x), arm.w.y - arm.s.y);
           M.okL = A.w.v > 0.5 && A.s.v > 0.5;
           M.okR = Bm.w.v > 0.5 && Bm.s.v > 0.5;
-          if (M.okL) M.armL = sm(M.armL, ang(A), 0.5);
-          if (M.okR) M.armR = sm(M.armR, ang(Bm), 0.5);
+          // each segment's angle from straight down (same convention for arms and legs)
+          const segAng = (a, b) => Math.atan2(-(b.x - a.x), b.y - a.y);
+          const okElbL = M.okL && A.e.v > 0.5, okElbR = M.okR && Bm.e.v > 0.5;
+          if (M.okL) M.armL = sm(M.armL, okElbL ? segAng(A.s, A.e) : ang(A), 0.5);
+          if (M.okR) M.armR = sm(M.armR, okElbR ? segAng(Bm.s, Bm.e) : ang(Bm), 0.5);
+          const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+          M.foreL = sm(M.foreL, okElbL ? clamp(wrap(segAng(A.e, A.w) - segAng(A.s, A.e)), -2.6, 2.6) : 0, 0.5);
+          M.foreR = sm(M.foreR, okElbR ? clamp(wrap(segAng(Bm.e, Bm.w) - segAng(Bm.s, Bm.e)), -2.6, 2.6) : 0, 0.5);
+          // legs: hip, knee, ankle, sorted by screen side like the arms
+          let LA = { h: P(23), k: P(25), a: P(27) }, LB = { h: P(24), k: P(26), a: P(28) };
+          if (LA.h.x > LB.h.x) [LA, LB] = [LB, LA];
+          M.okLegL = LA.h.v > 0.5 && LA.k.v > 0.5;
+          M.okLegR = LB.h.v > 0.5 && LB.k.v > 0.5;
+          if (M.okLegL) {
+            M.thighL = sm(M.thighL, clamp(segAng(LA.h, LA.k), -1.6, 1.6), 0.5);
+            M.shinL = sm(M.shinL, LA.a.v > 0.5 ? clamp(wrap(segAng(LA.k, LA.a) - segAng(LA.h, LA.k)), -2.2, 2.2) : 0, 0.5);
+          }
+          if (M.okLegR) {
+            M.thighR = sm(M.thighR, clamp(segAng(LB.h, LB.k), -1.6, 1.6), 0.5);
+            M.shinR = sm(M.shinR, LB.a.v > 0.5 ? clamp(wrap(segAng(LB.k, LB.a) - segAng(LB.h, LB.k)), -2.2, 2.2) : 0, 0.5);
+          }
+          // where the person stands: left/right across the picture, and up/down (jump, squat) against a slow baseline
+          if (A.s.v > 0.5 && Bm.s.v > 0.5) {
+            const mx = (A.s.x + Bm.s.x) / 2 / aspect, my = (A.s.y + Bm.s.y) / 2;
+            M.posX = sm(M.posX, clamp((mx - 0.5) * 2, -1, 1), 0.35);
+            if (M.baseY === null) M.baseY = my; else M.baseY = sm(M.baseY, my, 0.015);
+            M.posY = sm(M.posY, clamp((M.baseY - my) / Math.max(0.08, M.bodyW || 0.2), -1, 1.5), 0.5);
+          }
           if (A.s.v > 0.5 && Bm.s.v > 0.5) M.lean = sm(M.lean, clamp(Math.atan2(Bm.s.y - A.s.y, Bm.s.x - A.s.x), -0.35, 0.35), 0.35);
           M.lastPose = now; S.lastMotion = now;
           trackSpin(p, now);
@@ -817,7 +846,10 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     if (reduce) bob = 0;
     const breathe = reduce ? 1 : 1 + Math.sin(t * 2.4) * 0.018;
     ctx.save();
-    ctx.translate(w / 2, h * 0.52 + bob * k); ctx.scale(k, k);
+    if (M.poseOn) bob = 0;
+    M.shownX = sm(M.shownX || 0, M.poseOn ? M.posX : 0, reduce ? 1 : 0.2);
+    M.shownY = sm(M.shownY || 0, M.poseOn ? M.posY : 0, reduce ? 1 : 0.3);
+    ctx.translate(w / 2 + M.shownX * w * 0.25, h * 0.52 + bob * k - M.shownY * 60 * k); ctx.scale(k, k);
     M.spinShown = reduce ? M.spin : sm(M.spinShown, M.spin, 0.25);
     { const c = Math.cos(M.spinShown); ctx.scale(Math.sign(c || 1) * Math.max(0.1, Math.abs(c)), 1); }
     let tilt = m === 'sleep' ? 0.16 : S.look.x * 0.1 + (m === 'tickled' && !reduce ? Math.sin(t * 25) * 0.09 : 0);
@@ -1064,20 +1096,26 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
         new T.MeshStandardMaterial({ map: badgeTex, transparent: true, roughness: 0.5 }));
       badge.position.set(0, -1.45, 0.556); bodyG.add(badge);
 
-      // green legs and feet
-      for (const sx of [-1, 1]) {
-        const leg = new T.Mesh(new T.CapsuleGeometry(0.17, 0.28, 8, 16), mat(GREEN));
-        leg.position.set(sx * 0.36, -2.3, 0); bodyG.add(leg);
+      // green legs: hip pivot, knee pivot, foot
+      const mkLeg = sx => {
+        const hip = new T.Group(); hip.position.set(sx * 0.36, -2.08, 0); bodyG.add(hip);
+        const thigh = new T.Mesh(new T.CapsuleGeometry(0.16, 0.1, 8, 16), mat(GREEN)); thigh.position.y = -0.13; hip.add(thigh);
+        const knee = new T.Group(); knee.position.y = -0.26; hip.add(knee);
+        const shin = new T.Mesh(new T.CapsuleGeometry(0.15, 0.08, 8, 16), mat(GREEN)); shin.position.y = -0.1; knee.add(shin);
         const foot = new T.Mesh(new T.SphereGeometry(1, 32, 16), mat(GREEN2));
-        foot.scale.set(0.3, 0.17, 0.4); foot.position.set(sx * 0.38, -2.6, 0.1); bodyG.add(foot);
-      }
+        foot.scale.set(0.3, 0.17, 0.4); foot.position.set(sx * 0.02, -0.26, 0.1); knee.add(foot);
+        hip.userData.knee = knee; return hip;
+      };
+      const legL = mkLeg(-1), legR = mkLeg(1);
 
       // yellow arms, pivoting at the shoulders
       const mkArm = sx => {
         const g = new T.Group(); g.position.set(sx * 0.97, -0.98, 0);
-        const up = new T.Mesh(new T.CapsuleGeometry(0.14, 0.42, 8, 16), mat(YEL)); up.position.y = -0.33; g.add(up);
-        const hand = new T.Mesh(new T.SphereGeometry(0.22, 24, 16), mat(YEL2)); hand.position.y = -0.74; g.add(hand);
-        bodyG.add(g); return g;
+        const up = new T.Mesh(new T.CapsuleGeometry(0.14, 0.2, 8, 16), mat(YEL)); up.position.y = -0.18; g.add(up);
+        const elbow = new T.Group(); elbow.position.y = -0.36; g.add(elbow);
+        const fore = new T.Mesh(new T.CapsuleGeometry(0.13, 0.16, 8, 16), mat(YEL)); fore.position.y = -0.14; elbow.add(fore);
+        const hand = new T.Mesh(new T.SphereGeometry(0.22, 24, 16), mat(YEL2)); hand.position.y = -0.38; elbow.add(hand);
+        g.userData.elbow = elbow; bodyG.add(g); return g;
       };
       const armL = mkArm(-1), armR = mkArm(1);
 
@@ -1110,7 +1148,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       const shadow = new T.Mesh(new T.PlaneGeometry(2.6, 2.6), new T.MeshBasicMaterial({ map: new T.CanvasTexture(sc), transparent: true, depthWrite: false }));
       shadow.rotation.x = -Math.PI / 2; shadow.position.y = -2.78; scene.add(shadow);
 
-      R3 = { T, gl, scene, cam, root, bodyG, body, head, armL, armR, ants, tipMat, shadow, fc, fctx, faceTex };
+      R3 = { T, gl, scene, cam, root, bodyG, body, head, armL, armR, legL, legR, ants, tipMat, shadow, fc, fctx, faceTex };
       resize();
     } catch (e) { R3 = null; }
   }
@@ -1168,12 +1206,24 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     if (M.poseOn && M.okR) aR = M.armR;
 
     const R = R3;
-    R.root.position.y = -bob * 0.012;
+    const copyBody = M.poseOn;
+    if (copyBody) bob = 0; // the person's own up/down movement drives the robot instead
+    M.shownX = sm(M.shownX || 0, copyBody ? M.posX * 1.9 : 0, reduce ? 1 : 0.2);
+    M.shownY = sm(M.shownY || 0, copyBody ? M.posY * 0.9 : 0, reduce ? 1 : 0.3);
+    R.root.position.x = M.shownX;
+    R.root.position.y = -bob * 0.012 + M.shownY;
     R.root.rotation.z = M.poseOn ? -M.lean : 0;
     M.spinShown = reduce ? M.spin : sm(M.spinShown, M.spin, 0.25);
     R.root.rotation.y = M.spinShown;
     R.body.scale.set(1 / breathe, breathe, 1);
     R.armL.rotation.z = -aL; R.armR.rotation.z = -aR;
+    R.armL.userData.elbow.rotation.z = copyBody && M.okL ? -M.foreL : 0;
+    R.armR.userData.elbow.rotation.z = copyBody && M.okR ? -M.foreR : 0;
+    R.legL.rotation.z = copyBody && M.okLegL ? -M.thighL : 0;
+    R.legR.rotation.z = copyBody && M.okLegR ? -M.thighR : 0;
+    R.legL.userData.knee.rotation.z = copyBody && M.okLegL ? -M.shinL : 0;
+    R.legR.userData.knee.rotation.z = copyBody && M.okLegR ? -M.shinR : 0;
+    R.shadow.position.x = M.shownX;
     R.head.rotation.set(S.look.y * 0.32, S.look.x * 0.5, -tilt);
     R.head.position.x = M.faceOn ? M.yaw * 0.18 : 0;
     // antennae wobble; tips glow, orange when scared
@@ -1220,7 +1270,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     requestAnimationFrame(loop);
   }
   // ---- auto-update: compare this build with version.json, served fresh ----
-  const BUILD = '20261106090032';
+  const BUILD = '20261106090212';
   async function latestBuild() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
