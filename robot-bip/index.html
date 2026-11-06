@@ -162,6 +162,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   <div>
     <div class="label">Thử chơi với Nắng Mai</div>
     <ul>
+      <li>Nắng Mai chỉ theo <b>một người gần camera nhất</b></li>
       <li><b>Lắc, gật, nghiêng đầu</b>, nháy mắt, há miệng, cười, giơ tay: Nắng Mai làm theo bạn</li>
       <li><b>Di chuyển</b> qua lại: mắt nhìn theo</li>
       <li><b>Vẫy tay</b> nhanh: Nắng Mai vẫy tay, chào "Hello! Nắng Mai says hi!" rồi nói "Welcome to Nắng Mai!"</li>
@@ -337,8 +338,14 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     for (let i = 0; i < W * H; i++) { const v = (d[i*4] * .3 + d[i*4+1] * .59 + d[i*4+2] * .11) | 0; gray[i] = v; bright += v; }
     bright /= W * H;
     let count = 0, sx = 0, sy = 0;
+    // when a face is followed, ignore movement away from that person (people behind, passers-by)
+    const T0 = M.faceOn && M.target ? M.target : null;
+    const rx0 = T0 ? Math.floor((T0.cx - T0.w * 2.4) * W) : 0, rx1 = T0 ? Math.ceil((T0.cx + T0.w * 2.4) * W) : W;
+    const ry0 = T0 ? Math.floor((T0.cy - T0.h * 1.3) * H) : 0;
+    const area = T0 ? Math.max(1, (Math.min(W, rx1) - Math.max(0, rx0)) * (H - Math.max(0, ry0))) : W * H;
     if (prevGray) {
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        if (T0 && (x < rx0 || x > rx1 || y < ry0)) continue;
         const i = y * W + x;
         if (Math.abs(gray[i] - prevGray[i]) > 28) {
           count++; sx += x; sy += y;
@@ -348,7 +355,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       pctx.putImageData(img, 0, 0);
     }
     prevGray = gray;
-    const frac = count / (W * H);
+    const frac = count / area;
     S.motion += (frac - S.motion) * 0.3;
     meter.style.width = Math.min(100, S.motion * 600) + '%';
 
@@ -386,7 +393,8 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   const M = { on: true, ready: false, face: null, pose: null, tick: 0, lastFace: 0, lastPose: 0,
               faceOn: false, poseOn: false, yaw: 0, pitch: 0, roll: 0, base: null,
               blinkL: 0, blinkR: 0, jaw: 0, smile: 0, brow: 0,
-              armL: 0.55, armR: -0.55, okL: false, okR: false, lean: 0 };
+              armL: 0.55, armR: -0.55, okL: false, okR: false, lean: 0,
+              target: null, faceCount: 0 };
   const mimicEl = document.getElementById('mimic'), mimicBtn = document.getElementById('mimicbtn');
   function setMimicStatus(t) { mimicEl.textContent = t; }
   mimicBtn.onclick = () => {
@@ -401,10 +409,10 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
       const make = delegate => Promise.all([
         vision.FaceLandmarker.createFromOptions(fs, {
           baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task', delegate },
-          runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true }),
+          runningMode: 'VIDEO', numFaces: 4, outputFaceBlendshapes: true }),
         vision.PoseLandmarker.createFromOptions(fs, {
           baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task', delegate },
-          runningMode: 'VIDEO', numPoses: 1 }),
+          runningMode: 'VIDEO', numPoses: 3 }),
       ]);
       try { [M.face, M.pose] = await make('GPU'); } catch { [M.face, M.pose] = await make('CPU'); }
       M.ready = true; mimicBtn.hidden = false;
@@ -428,8 +436,33 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     // face every tick
     try {
       const r = M.face.detectForVideo(video, now);
-      const f = r.faceLandmarks && r.faceLandmarks[0];
+      const faces = r.faceLandmarks || [];
+      M.faceCount = faces.length;
+      // box of each face in mirrored, normalised coordinates
+      const boxes = faces.map(L => {
+        let x0 = 1, x1 = 0, y0 = 1, y1 = 0;
+        for (const q of L) { const x = 1 - q.x; if (x < x0) x0 = x; if (x > x1) x1 = x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y; }
+        return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0 };
+      });
+      let pick = -1, best = 0;
+      boxes.forEach((b, i) => { if (b.w > best) { best = b.w; pick = i; } });
+      if (pick >= 0 && M.target && now - M.lastFace < 1000) {
+        // keep following the same person unless another face is clearly nearer (20% bigger)
+        let same = -1, dist = 1e9;
+        boxes.forEach((b, i) => { const d = Math.hypot(b.cx - M.target.cx, b.cy - M.target.cy); if (d < dist) { dist = d; same = i; } });
+        if (same >= 0 && dist < Math.max(0.12, M.target.w) && boxes[same].w * 1.2 >= best) pick = same;
+      }
+      const f = pick >= 0 ? faces[pick] : null;
+      // preview: other faces in grey, the followed face in yellow
+      boxes.forEach((b, i) => {
+        pctx.strokeStyle = i === pick ? '#FFD84D' : 'rgba(255,255,255,.35)'; pctx.lineWidth = i === pick ? 1.5 : 1;
+        pctx.strokeRect((b.cx - b.w / 2) * W, (b.cy - b.h / 2) * H, b.w * W, b.h * H);
+      });
       if (f) {
+        const tb = boxes[pick];
+        M.target = M.target && now - M.lastFace < 1000
+          ? { cx: sm(M.target.cx, tb.cx, 0.5), cy: sm(M.target.cy, tb.cy, 0.5), w: sm(M.target.w, tb.w, 0.5), h: sm(M.target.h, tb.h, 0.5) }
+          : tb;
         const P = i => ({ x: 1 - f[i].x, y: f[i].y }); // mirrored, like a mirror
         let a = P(33), b = P(263); if (a.x > b.x) [a, b] = [b, a];
         const roll = Math.atan2(b.y - a.y, (b.x - a.x) * aspect);
@@ -460,7 +493,15 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     if (M.tick % 2 === 0) {
       try {
         const r = M.pose.detectForVideo(video, now);
-        const p = r.landmarks && r.landmarks[0];
+        const bodies = r.landmarks || [];
+        let p = null, bestScore = -1e9;
+        for (const L of bodies) {
+          const nose = { x: 1 - L[0].x, y: L[0].y };
+          const shoulders = Math.abs(L[11].x - L[12].x);
+          const score = M.faceOn && M.target ? -Math.hypot(nose.x - M.target.cx, nose.y - M.target.cy) : shoulders;
+          if (score > bestScore) { bestScore = score; p = L; }
+        }
+        if (p && M.faceOn && M.target && -bestScore > Math.max(0.15, M.target.w * 1.2)) p = null; // no body near the followed face
         if (p) {
           const P = i => ({ x: (1 - p[i].x) * aspect, y: p[i].y, v: p[i].visibility ?? 1 });
           // the two arms, sorted by which side of the screen their shoulder is on
@@ -480,6 +521,11 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     }
     M.faceOn = now - M.lastFace < 700;
     M.poseOn = now - M.lastPose < 900;
+    if (M.tick % 10 === 0) {
+      const n = M.faceCount;
+      setMimicStatus(!M.faceOn ? 'Chưa thấy khuôn mặt nào' :
+        n > 1 ? `Thấy ${n} người, đang theo người gần nhất` : 'Đang theo dõi và bắt chước bạn');
+    }
   }
 
   // ---- assistant: listen (speech recognition), answer (Claude with the viewer's key, else built-in), speak ----
@@ -719,7 +765,11 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     ctx.save();
     ctx.translate(w / 2, h * 0.52 + bob * k); ctx.scale(k, k);
     let tilt = m === 'sleep' ? 0.16 : S.look.x * 0.1 + (m === 'tickled' && !reduce ? Math.sin(t * 25) * 0.09 : 0);
-    if (M.faceOn && m !== 'sleep') { tilt = M.roll; S.lookT.x = M.yaw; S.lookT.y = M.pitch; }
+    if (M.faceOn && m !== 'sleep') {
+      tilt = M.roll;
+      const tx = M.target ? (M.target.cx - 0.5) * 1.6 : 0, ty = M.target ? (M.target.cy - 0.45) * 1.4 : 0;
+      S.lookT.x = clamp(tx + M.yaw * 0.8, -1.2, 1.2); S.lookT.y = clamp(ty + M.pitch * 0.8, -1, 1);
+    }
     if (m === 'thinking') { S.lookT.x = 0.7; S.lookT.y = -0.9; tilt = 0.12 + (reduce ? 0 : Math.sin(t * 3) * 0.04); }
     if (M.poseOn) ctx.rotate(M.lean);
 
@@ -1046,7 +1096,11 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     if (reduce) bob = 0;
     const breathe = reduce ? 1 : 1 + Math.sin(t * 2.4) * 0.02;
     let tilt = m === 'sleep' ? 0.16 : S.look.x * 0.1 + (m === 'tickled' && !reduce ? Math.sin(t * 25) * 0.09 : 0);
-    if (M.faceOn && m !== 'sleep') { tilt = M.roll; S.lookT.x = M.yaw; S.lookT.y = M.pitch; }
+    if (M.faceOn && m !== 'sleep') {
+      tilt = M.roll;
+      const tx = M.target ? (M.target.cx - 0.5) * 1.6 : 0, ty = M.target ? (M.target.cy - 0.45) * 1.4 : 0;
+      S.lookT.x = clamp(tx + M.yaw * 0.8, -1.2, 1.2); S.lookT.y = clamp(ty + M.pitch * 0.8, -1, 1);
+    }
     if (m === 'thinking') { S.lookT.x = 0.7; S.lookT.y = -0.9; tilt = 0.12 + (reduce ? 0 : Math.sin(t * 3) * 0.04); }
 
     const armWave = m === 'happy' && !reduce ? Math.sin(t * 13) * 0.5 : 0;
@@ -1108,7 +1162,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     requestAnimationFrame(loop);
   }
   // ---- auto-update: compare this build with version.json, served fresh ----
-  const BUILD = '20261102234318';
+  const BUILD = '20261106083649';
   async function latestBuild() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
