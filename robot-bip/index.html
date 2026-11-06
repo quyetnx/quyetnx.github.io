@@ -163,6 +163,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     <div class="label">Thử chơi với Nắng Mai</div>
     <ul>
       <li>Nắng Mai chỉ theo <b>một người gần camera nhất</b></li>
+      <li><b>Xoay người</b> một vòng: Nắng Mai xoay theo</li>
       <li><b>Lắc, gật, nghiêng đầu</b>, nháy mắt, há miệng, cười, giơ tay: Nắng Mai làm theo bạn</li>
       <li><b>Di chuyển</b> qua lại: mắt nhìn theo</li>
       <li><b>Vẫy tay</b> nhanh: Nắng Mai vẫy tay, chào "Hello! Nắng Mai says hi!" rồi nói "Welcome to Nắng Mai!"</li>
@@ -394,7 +395,8 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
               faceOn: false, poseOn: false, yaw: 0, pitch: 0, roll: 0, base: null,
               blinkL: 0, blinkR: 0, jaw: 0, smile: 0, brow: 0,
               armL: 0.55, armR: -0.55, okL: false, okR: false, lean: 0,
-              target: null, faceCount: 0 };
+              target: null, faceCount: 0,
+              bodyC: null, lastBody: 0, spin: 0, spinShown: 0, prevTheta: null, spinHist: [], lastSpinCheer: 0 };
   const mimicEl = document.getElementById('mimic'), mimicBtn = document.getElementById('mimicbtn');
   function setMimicStatus(t) { mimicEl.textContent = t; }
   mimicBtn.onclick = () => {
@@ -422,6 +424,34 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     }
   }
   const sm = (cur, v, a) => cur + (v - cur) * a;
+  // Body turn: angle of the shoulder line seen from above (mirrored like a mirror), unwrapped so full turns add up.
+  function trackSpin(L, now) {
+    const l = L[11], r = L[12];
+    M.bodyC = { x: 1 - (l.x + r.x) / 2, y: (l.y + r.y) / 2 }; M.lastBody = now;
+    if (Math.min(l.visibility ?? 1, r.visibility ?? 1) < 0.2) return;
+    const dx = (1 - r.x) - (1 - l.x), dz = r.z - l.z;
+    if (Math.hypot(dx, dz) < 0.04) return; // too small or too far to judge
+    const theta = Math.atan2(dz, dx);
+    if (M.prevTheta === null) { M.prevTheta = theta; return; }
+    let d = theta - M.prevTheta;
+    if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI;
+    M.prevTheta = theta;
+    if (Math.abs(d) > 1.6) return; // a jump, not a turn
+    M.spin += d;
+    // facing the camera again: settle on the nearest whole turn so the robot ends up facing us
+    if (M.faceOn && Math.abs(theta) < 0.3) {
+      const home = Math.round(M.spin / (2 * Math.PI)) * 2 * Math.PI;
+      M.spin = sm(M.spin, home + theta, 0.15);
+    }
+    // a full turn within a few seconds earns a cheer
+    M.spinHist.push({ t: now, a: M.spin });
+    M.spinHist = M.spinHist.filter(h => now - h.t < 5000);
+    const lo = Math.min(...M.spinHist.map(h => h.a)), hi = Math.max(...M.spinHist.map(h => h.a));
+    if (hi - lo > 5.6 && now - M.lastSpinCheer > 6000) {
+      M.lastSpinCheer = now; M.spinHist = [];
+      if (S.mood !== 'listening' && S.mood !== 'thinking') setMood('excited', 2500, pick(['Wow, what a spin!', 'Round and round we go!', 'Spinning is fun!']));
+    }
+  }
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   let lastVideoTime = -1;
   function track(now) {
@@ -498,7 +528,10 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
         for (const L of bodies) {
           const nose = { x: 1 - L[0].x, y: L[0].y };
           const shoulders = Math.abs(L[11].x - L[12].x);
-          const score = M.faceOn && M.target ? -Math.hypot(nose.x - M.target.cx, nose.y - M.target.cy) : shoulders;
+          const mid = { x: 1 - (L[11].x + L[12].x) / 2, y: (L[11].y + L[12].y) / 2 };
+          const score = M.faceOn && M.target ? -Math.hypot(nose.x - M.target.cx, nose.y - M.target.cy)
+            : M.bodyC && now - M.lastBody < 1500 ? -Math.hypot(mid.x - M.bodyC.x, mid.y - M.bodyC.y)
+            : shoulders;
           if (score > bestScore) { bestScore = score; p = L; }
         }
         if (p && M.faceOn && M.target && -bestScore > Math.max(0.15, M.target.w * 1.2)) p = null; // no body near the followed face
@@ -514,6 +547,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
           if (M.okR) M.armR = sm(M.armR, ang(Bm), 0.5);
           if (A.s.v > 0.5 && Bm.s.v > 0.5) M.lean = sm(M.lean, clamp(Math.atan2(Bm.s.y - A.s.y, Bm.s.x - A.s.x), -0.35, 0.35), 0.35);
           M.lastPose = now; S.lastMotion = now;
+          trackSpin(p, now);
           pctx.fillStyle = '#2A8BE0';
           [A.s, A.e, A.w, Bm.s, Bm.e, Bm.w].forEach(q => q.v > 0.5 && pctx.fillRect(q.x / aspect * W - 1.5, q.y * H - 1.5, 3, 3));
         }
@@ -764,6 +798,8 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     const breathe = reduce ? 1 : 1 + Math.sin(t * 2.4) * 0.018;
     ctx.save();
     ctx.translate(w / 2, h * 0.52 + bob * k); ctx.scale(k, k);
+    M.spinShown = reduce ? M.spin : sm(M.spinShown, M.spin, 0.25);
+    { const c = Math.cos(M.spinShown); ctx.scale(Math.sign(c || 1) * Math.max(0.1, Math.abs(c)), 1); }
     let tilt = m === 'sleep' ? 0.16 : S.look.x * 0.1 + (m === 'tickled' && !reduce ? Math.sin(t * 25) * 0.09 : 0);
     if (M.faceOn && m !== 'sleep') {
       tilt = M.roll;
@@ -1114,6 +1150,8 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     const R = R3;
     R.root.position.y = -bob * 0.012;
     R.root.rotation.z = M.poseOn ? -M.lean : 0;
+    M.spinShown = reduce ? M.spin : sm(M.spinShown, M.spin, 0.25);
+    R.root.rotation.y = M.spinShown;
     R.body.scale.set(1 / breathe, breathe, 1);
     R.armL.rotation.z = -aL; R.armR.rotation.z = -aR;
     R.head.rotation.set(S.look.y * 0.32, S.look.x * 0.5, -tilt);
@@ -1162,7 +1200,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     requestAnimationFrame(loop);
   }
   // ---- auto-update: compare this build with version.json, served fresh ----
-  const BUILD = '20261106083649';
+  const BUILD = '20261106085242';
   async function latestBuild() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
