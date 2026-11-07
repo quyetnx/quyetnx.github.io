@@ -68,7 +68,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
   background: rgba(0,0,0,.6); color: #fff; font: 600 13px var(--font-body); }
 .inapp { background: #FFF1C2; color: #5a3d00; border: 2px solid #FFC417; border-radius: 10px; padding: 10px 12px; font-size: 14px; line-height: 1.5; margin: 0; }
 #bprint.main { background: #2A8BE0; border-color: #2A8BE0; color: #fff; font-size: 17px; padding: 12px 18px; }
-.bstage.framed video { position: absolute; left: 65.03%; top: 52.83%; width: 33.36%; height: 38.68%;
+.bstage.framed video { position: absolute; left: 29.11%; top: 51.42%; width: 41.78%; height: 43.4%;
   border-radius: 1.6% / 2.3%; outline: .6vw solid #fff; }
 #bshotno { position: absolute; top: 14px; left: 14px; padding: 6px 12px; border-radius: 999px;
   background: rgba(0,0,0,.55); color: #fff; font: 600 14px var(--font-body); }
@@ -421,7 +421,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
       const c = document.createElement('canvas'); c.width = 1484; c.height = 1060;
       const x = c.getContext('2d');
       x.drawImage(kh, 0, 0, 1484, 1060);
-      const X = 965, Y = 560, w = 495, h = 410; // right of the robot's thumbs-up
+      const X = 432, Y = 545, w = 620, h = 460; // centred under the title, over the robot
       // white mat with a soft shadow, then the photo cover-cropped into the window
       x.save(); x.shadowColor = 'rgba(0,0,0,.3)'; x.shadowBlur = 24; x.shadowOffsetY = 6;
       rrect(x, X - 10, Y - 10, w + 20, h + 20, 34); x.fillStyle = '#fff'; x.fill(); x.restore();
@@ -680,7 +680,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
   };
 
   // ---- auto-update: reload into a newer version when one is published ----
-  const BUILD = '20261107110711';
+  const BUILD = '20261107110939';
   (async () => {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
