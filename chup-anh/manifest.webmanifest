@@ -1,26 +1,33 @@
 {
+ "id": "/chup-anh/",
  "name": "Chụp ảnh Nắng Mai",
- "short_name": "Chụp ảnh Nắng Mai",
+ "short_name": "Chụp ảnh",
  "description": "Chụp ảnh cùng robot trong phông Nắng Mai hôm nay và in ngay.",
- "start_url": "./",
- "scope": "./",
+ "start_url": "/chup-anh/",
+ "scope": "/chup-anh/",
  "display": "standalone",
  "orientation": "landscape",
- "background_color": "#e8eef2",
+ "background_color": "#ffffff",
  "theme_color": "#FFC417",
  "lang": "vi",
  "icons": [
   {
-   "src": "icon-192.png",
+   "src": "/app-icon-192.png",
    "sizes": "192x192",
    "type": "image/png",
    "purpose": "any"
   },
   {
-   "src": "icon-512.png",
+   "src": "/app-icon-512.png",
    "sizes": "512x512",
    "type": "image/png",
    "purpose": "any"
+  },
+  {
+   "src": "/app-icon-maskable-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "maskable"
   }
  ]
 }
