@@ -106,6 +106,12 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
 .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 50%; vertical-align: -2px; margin-right: 6px; border: 1px solid rgba(0,0,0,.2); }
 .bactions { display: flex; flex-wrap: wrap; gap: 8px; }
 .bactions a { text-decoration: none; display: inline-block; font: 600 15px var(--font-body); padding: 10px 14px; border-radius: 8px; border: 2px solid var(--fg); background: var(--fg); color: var(--bg); }
+.bsticky {
+  position: sticky; bottom: 0; z-index: 5; margin: auto -20px -20px; padding: 14px 20px calc(14px + env(safe-area-inset-bottom, 0px));
+  background: var(--panel); border-top: 1px solid var(--shell); box-shadow: 0 -8px 18px rgba(0,0,0,.06);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.bsticky #bshoot { width: 100%; }
 #bshoot { font-size: 17px; padding: 14px; background: #EF3B3B; border-color: #EF3B3B; color: #fff; }
 #bshoot:disabled { opacity: .5; cursor: default; }
 #bhint { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 0; }
@@ -155,15 +161,17 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     <div><div class="label">Chụp bằng cử chỉ</div><div class="chips" id="c-gesture"></div></div>
     <div><div class="label">In ngay sau khi chụp</div><div class="chips" id="c-print"></div></div>
     <p class="inapp" id="inapp2" hidden></p>
-    <button id="bshoot">Bắt đầu chụp 4 tấm</button>
-    <div class="bactions" id="bactions" hidden>
-      <a id="bsave" href="#" download="NangMai.jpg">Tải ảnh về</a>
-      <button id="bprint">In ảnh</button>
-      <button id="bshare" hidden>Chia sẻ</button>
-      <button class="ghost" id="bagain">Chụp lại</button>
-    </div>
     <button class="ghost" id="sound">Âm thanh: bật</button>
     <p id="bhint">Ảnh chỉ nằm trên máy này, không gửi đi đâu. Khi in, chọn máy in Epson L1210 và đúng khổ giấy đang dùng (A5, A6, 10×15 hoặc A4). Trên iPad có thể chạm giữ vào ảnh rồi chọn "Lưu vào Ảnh".</p>
+    <div class="bsticky">
+      <button id="bshoot">Bắt đầu chụp 4 tấm</button>
+      <div class="bactions" id="bactions" hidden>
+        <a id="bsave" href="#" download="NangMai.jpg">Tải ảnh về</a>
+        <button id="bprint">In ảnh</button>
+        <button id="bshare" hidden>Chia sẻ</button>
+        <button class="ghost" id="bagain">Chụp lại</button>
+      </div>
+    </div>
   </div>
 </div>
 <div id="printwrap"><img id="print1" alt=""><img id="print2" alt="" hidden></div>
@@ -680,7 +688,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
   };
 
   // ---- auto-update: reload into a newer version when one is published ----
-  const BUILD = '20261107111314';
+  const BUILD = '20261107111541';
   (async () => {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
