@@ -246,7 +246,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
         BO[key] = v;
         box.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', 'false'));
         b.setAttribute('aria-pressed', 'true');
-        if (key === 'filter') bvideo.style.filter = FILTERS[v].css;
+        if (key === 'filter') LV.last = 0;
         if (key === 'layout') { layoutUI(); if (BO.shots.length && BO.shots.length !== need()) resetShots(); }
         if (BO.shots.length === need()) compose();
         if (key === 'print' && BO.url) preparePrint();
@@ -302,11 +302,12 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     const vw = bvideo.videoWidth || 640, vh = bvideo.videoHeight || 480;
     let sw = vw, sh = vh;
     if (vw / vh > 4 / 3) sw = vh * 4 / 3; else sh = vw * 3 / 4;
-    const c = document.createElement('canvas'); c.width = 800; c.height = 600;
+    const W0 = Math.round(Math.min(1600, sw)), H0 = Math.round(W0 * 3 / 4);
+    const c = document.createElement('canvas'); c.width = W0; c.height = H0;
     const x = c.getContext('2d');
-    x.translate(800, 0); x.scale(-1, 1);
-    x.drawImage(bvideo, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, 800, 600);
-    return c;
+    x.translate(W0, 0); x.scale(-1, 1);
+    x.drawImage(bvideo, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, W0, H0);
+    return enhance(c, true);
   }
   const SAY = { 1: 'One', 2: 'Two', 3: 'Three', 4: 'Four', 5: 'Five' };
   async function startShoot(viaGesture) {
@@ -344,6 +345,65 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
   bshoot.onclick = () => startShoot(false);
 
   // ---- image processing ----
+  const SC = 2; // output scale: 1484×1060 layout → 2968×2120 pixels
+  async function tuneCamera(stream) {
+    const track = stream.getVideoTracks()[0];
+    if (!track || !track.getCapabilities) return;
+    try {
+      const cap = track.getCapabilities(), adv = [];
+      if ((cap.focusMode || []).includes('continuous')) adv.push({ focusMode: 'continuous' });
+      if ((cap.exposureMode || []).includes('continuous')) adv.push({ exposureMode: 'continuous' });
+      if ((cap.whiteBalanceMode || []).includes('continuous')) adv.push({ whiteBalanceMode: 'continuous' });
+      if (cap.exposureCompensation) adv.push({ exposureCompensation: Math.min(cap.exposureCompensation.max, (cap.exposureCompensation.max || 0) * 0.35) });
+      for (const a of adv) { try { await track.applyConstraints({ advanced: [a] }); } catch {} }
+    } catch {}
+  }
+  // Auto levels: measured from the live picture about twice a second, applied to the preview and to every photo.
+  const LV = { lut: new Uint8ClampedArray(256).map((_, i) => i), gain: 1, last: 0 };
+  function measureLight(now) {
+    if (!bvideo.srcObject || bvideo.readyState < 2 || now - LV.last < 500) return;
+    LV.last = now;
+    const c = document.createElement('canvas'); c.width = 96; c.height = 72;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(bvideo, 0, 0, 96, 72);
+    const d = x.getImageData(0, 0, 96, 72).data, hist = new Uint32Array(256);
+    let sum = 0;
+    for (let i = 0; i < d.length; i += 4) { const l = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8; hist[l]++; sum += l; }
+    const n = d.length / 4, mean = sum / n;
+    let acc = 0, lo = 0, hi = 255;
+    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc > n * 0.01) { lo = v; break; } }
+    acc = 0; for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc > n * 0.005) { hi = v; break; } }
+    lo = Math.min(lo, 40); hi = Math.max(hi, 160);
+    // stretch the range, then lift the mid-tones so the average lands near 52% brightness
+    const m = Math.min(0.95, Math.max(0.05, (mean - lo) / (hi - lo)));
+    const gamma = Math.min(1.6, Math.max(0.55, Math.log(0.52) / Math.log(m)));
+    for (let v = 0; v < 256; v++) {
+      const t = Math.min(1, Math.max(0, (v - lo) / (hi - lo)));
+      LV.lut[v] = Math.round(255 * Math.pow(t, gamma));
+    }
+    LV.gain = Math.min(1.7, Math.max(1, 125 / Math.max(20, mean)));
+    // preview of the plain camera picture follows the same correction
+    bvideo.style.filter = `brightness(${LV.gain.toFixed(2)}) ${FILTERS[BO.filter].css === 'none' ? '' : FILTERS[BO.filter].css}`.trim();
+  }
+  (function lightLoop(t) { requestAnimationFrame(lightLoop); measureLight(t || 0); })();
+  function enhance(c, sharpen) {
+    const x = c.getContext('2d', { willReadFrequently: true });
+    const im = x.getImageData(0, 0, c.width, c.height), d = im.data, L = LV.lut;
+    for (let i = 0; i < d.length; i += 4) { d[i] = L[d[i]]; d[i + 1] = L[d[i + 1]]; d[i + 2] = L[d[i + 2]]; }
+    if (sharpen) {
+      // unsharp mask: add back 70% of the difference from a light blur (3×3)
+      const w = c.width, h = c.height, src = new Uint8ClampedArray(d);
+      for (let y = 1; y < h - 1; y++) for (let xx = 1; xx < w - 1; xx++) {
+        const i = (y * w + xx) * 4;
+        for (let k = 0; k < 3; k++) {
+          const b = (src[i + k] * 4 + src[i - 4 + k] + src[i + 4 + k] + src[i - w * 4 + k] + src[i + w * 4 + k]
+                   + (src[i - w * 4 - 4 + k] + src[i - w * 4 + 4 + k] + src[i + w * 4 - 4 + k] + src[i + w * 4 + 4 + k]) * 0.5) / 10;
+          d[i + k] = src[i + k] + (src[i + k] - b) * 0.7;
+        }
+      }
+    }
+    x.putImageData(im, 0, 0);
+    return c;
+  }
   function filtered(src, f) {
     const c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
     const x = c.getContext('2d'); x.drawImage(src, 0, 0);
@@ -414,8 +474,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     const F = FRAMES[BO.frame], fl = FILTERS[BO.filter], strip = BO.layout === 'strip';
     const d0 = new Date(), dateStr = `${String(d0.getDate()).padStart(2, '0')}.${String(d0.getMonth() + 1).padStart(2, '0')}.${d0.getFullYear()}`;
     if (BO.layout === 'cutout') {
-      const c = document.createElement('canvas'); c.width = 1484; c.height = 1060;
-      const x = c.getContext('2d');
+      const c = document.createElement('canvas'); c.width = 1484 * SC; c.height = 1060 * SC;
+      const x = c.getContext('2d'); x.scale(SC, SC); x.imageSmoothingQuality = 'high';
       x.drawImage(document.getElementById('khung'), 0, 0, 1484, 1060);
       const person = filtered(BO.shots[0], { p: Object.fromEntries(Object.entries(fl.p).filter(([k]) => k !== 'glow')) });
       drawPerson(x, person);
@@ -426,8 +486,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     }
     if (BO.layout === 'backdrop') {
       const kh = document.getElementById('khung');
-      const c = document.createElement('canvas'); c.width = 1484; c.height = 1060;
-      const x = c.getContext('2d');
+      const c = document.createElement('canvas'); c.width = 1484 * SC; c.height = 1060 * SC;
+      const x = c.getContext('2d'); x.scale(SC, SC); x.imageSmoothingQuality = 'high';
       x.drawImage(kh, 0, 0, 1484, 1060);
       const X = 432, Y = 545, w = 620, h = 460; // centred under the title, over the robot
       // white mat with a soft shadow, then the photo cover-cropped into the window
@@ -446,8 +506,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     const pw = strip ? 540 : 560, ph = pw * 3 / 4, m = 32, gap = 18, foot = strip ? 230 : 190;
     const W2 = strip ? pw + m * 2 : pw * 2 + gap + m * 2;
     const H2 = strip ? m + ph * 4 + gap * 3 + foot : m + ph * 2 + gap + foot;
-    const c = document.createElement('canvas'); c.width = W2; c.height = H2;
-    const x = c.getContext('2d');
+    const c = document.createElement('canvas'); c.width = W2 * SC; c.height = H2 * SC;
+    const x = c.getContext('2d'); x.scale(SC, SC); x.imageSmoothingQuality = 'high';
     x.fillStyle = F.bg; x.fillRect(0, 0, W2, H2);
     if (BO.frame === 'trang') { x.strokeStyle = '#e3e7ea'; x.lineWidth = 4; x.strokeRect(2, 2, W2 - 4, H2 - 4); }
     BO.shots.forEach((shot, i) => {
@@ -580,7 +640,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     return out;
   }
   function grabCutout() {
-    const frame = cropFrame(720);
+    const vh0 = bvideo.videoHeight || 720;
+    const frame = enhance(cropFrame(Math.round(Math.min(1200, vh0 * PLACE.w / PLACE.h))), true);
     if (SEG.state !== 'ready') return frame; // no segmenter: plain photo in the person's spot
     try { return cutout(frame) || frame; } catch { return frame; }
   }
@@ -598,7 +659,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     if (BO.layout !== 'cutout' || bstage.hidden || !bvideo.srcObject || bvideo.readyState < 2) return;
     if (now - SEG.lastRun < 80) return;
     SEG.lastRun = now;
-    const frame = cropFrame(320);
+    const frame = enhance(cropFrame(320), false);
     if (SEG.state === 'ready') { try { lastPerson = cutout(frame) || lastPerson; } catch {} }
     else lastPerson = frame;
     bcx.drawImage(document.getElementById('khung'), 0, 0, 1484, 1060);
@@ -676,7 +737,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     speak("Hi! Let's take photos!");
     try {
       if (!navigator.mediaDevices) throw new Error('no camera');
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }, audio: false });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: 'user' }, audio: false });
+      tuneCamera(stream);
       bvideo.srcObject = stream; await bvideo.play().catch(() => {});
       bvideo.style.filter = FILTERS[BO.filter].css;
       document.getElementById('start').hidden = true;
@@ -688,7 +750,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
   };
 
   // ---- auto-update: reload into a newer version when one is published ----
-  const BUILD = '20261107111541';
+  const BUILD = '20261107112109';
   (async () => {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
