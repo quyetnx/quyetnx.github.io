@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Chụp ảnh Nắng Mai</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#FFC417">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <meta name="description" content="Chụp ảnh kiểu Hàn với phông Nắng Mai hôm nay của Mầm non Nắng Mai.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
@@ -157,11 +161,11 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
       <button class="ghost" id="bagain">Chụp lại</button>
     </div>
     <button class="ghost" id="sound">Âm thanh: bật</button>
-    <p id="bhint">Ảnh chỉ nằm trên máy này, không gửi đi đâu. Khi in, chọn máy in và khổ giấy 10×15 cm (4×6 inch). Trên iPad có thể chạm giữ vào ảnh rồi chọn "Lưu vào Ảnh".</p>
+    <p id="bhint">Ảnh chỉ nằm trên máy này, không gửi đi đâu. Khi in, chọn máy in Epson L1210 và khổ giấy A5. Trên iPad có thể chạm giữ vào ảnh rồi chọn "Lưu vào Ảnh".</p>
   </div>
 </div>
 <div id="printwrap"><img id="print1" alt=""><img id="print2" alt="" hidden></div>
-<style id="pagestyle">@page { size: 15cm 10cm; margin: 0; }</style>
+<style id="pagestyle">@page { size: A5 landscape; margin: 5mm; }</style>
 <div id="start">
   <img class="cover" id="cover" alt="Phông Nắng Mai hôm nay">
   <h1>Chụp ảnh Nắng Mai</h1>
@@ -235,6 +239,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
         if (key === 'filter') bvideo.style.filter = FILTERS[v].css;
         if (key === 'layout') { layoutUI(); if (BO.shots.length && BO.shots.length !== need()) resetShots(); }
         if (BO.shots.length === need()) compose();
+        if (key === 'print' && BO.url) preparePrint();
       };
       box.appendChild(b);
     });
@@ -483,17 +488,18 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
 
 
   // ---- printing: the finished photo on 10×15 cm photo paper or A4; strips print two side by side, ready to cut ----
-  BO.print = 'photo';
-  chips('c-print', [['photo', 'Giấy ảnh 10×15'], ['a4', 'Giấy A4'], ['off', 'Không in']], 'print');
+  BO.print = 'a5';
+  chips('c-print', [['a5', 'Giấy A5'], ['photo', 'Giấy ảnh 10×15'], ['a4', 'Giấy A4'], ['off', 'Không in']], 'print');
   function preparePrint() {
     if (!BO.url) return;
-    const strip = BO.layout === 'strip', a4 = BO.print === 'a4';
+    const strip = BO.layout === 'strip', a4 = BO.print === 'a4', a5 = BO.print === 'a5';
     const p1 = document.getElementById('print1'), p2 = document.getElementById('print2');
     p1.src = BO.url; p2.src = BO.url; p2.hidden = !strip;
     document.getElementById('printwrap').classList.toggle('pair', strip);
+    // A5 keeps a small margin: the L1210 prints borderless only up to 10×15 cm
     document.getElementById('pagestyle').textContent = strip
-      ? (a4 ? '@page { size: A4 portrait; margin: 10mm; }' : '@page { size: 10cm 15cm; margin: 0; }')
-      : (a4 ? '@page { size: A4 landscape; margin: 10mm; }' : '@page { size: 15cm 10cm; margin: 0; }');
+      ? (a5 ? '@page { size: A5 portrait; margin: 5mm; }' : a4 ? '@page { size: A4 portrait; margin: 10mm; }' : '@page { size: 10cm 15cm; margin: 0; }')
+      : (a5 ? '@page { size: A5 landscape; margin: 5mm; }' : a4 ? '@page { size: A4 landscape; margin: 10mm; }' : '@page { size: 15cm 10cm; margin: 0; }');
   }
   function printPhoto() {
     if (!BO.url) return;
@@ -672,7 +678,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
   };
 
   // ---- auto-update: reload into a newer version when one is published ----
-  const BUILD = '20261107104446';
+  const BUILD = '20261107110013';
   (async () => {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
