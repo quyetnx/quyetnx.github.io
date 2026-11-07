@@ -55,6 +55,13 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
 }
 .bstage.framed { aspect-ratio: 1484 / 1060; background: transparent; border-radius: 10px; }
 .bstage.framed #bframe { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.bstage.cut { aspect-ratio: 1484 / 1060; background: transparent; border-radius: 10px; }
+.bstage.cut video { position: absolute; width: 2px; height: 2px; opacity: 0; pointer-events: none; }
+#bcut { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#bseghint { position: absolute; z-index: 2; left: 12px; top: 12px; padding: 6px 12px; border-radius: 999px;
+  background: rgba(0,0,0,.6); color: #fff; font: 600 13px var(--font-body); }
+.inapp { background: #FFF1C2; color: #5a3d00; border: 2px solid #FFC417; border-radius: 10px; padding: 10px 12px; font-size: 14px; line-height: 1.5; margin: 0; }
+#bprint.main { background: #2A8BE0; border-color: #2A8BE0; color: #fff; font-size: 17px; padding: 12px 18px; }
 .bstage.framed video { position: absolute; left: 65.03%; top: 52.83%; width: 33.36%; height: 38.68%;
   border-radius: 1.6% / 2.3%; outline: .6vw solid #fff; }
 #bshotno { position: absolute; top: 14px; left: 14px; padding: 6px 12px; border-radius: 999px;
@@ -64,7 +71,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
   html, body { background: #fff !important; height: auto; }
   body > *:not(#printwrap) { display: none !important; }
   #printwrap { display: flex !important; position: fixed; inset: 0; align-items: center; justify-content: center; gap: 0; }
-  #printwrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  #printwrap img { max-width: 100%; max-height: 100%; object-fit: contain; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   #printwrap.pair img { max-width: 50%; }
 }
 #bgesture {
@@ -110,6 +117,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
   <div class="bmain">
     <div class="bstage" id="bstage">
       <img id="bframe" alt="" hidden>
+      <canvas id="bcut" width="1484" height="1060" hidden></canvas>
+      <div id="bseghint" hidden>Đang tải tách nền...</div>
       <video id="bvideo" playsinline muted autoplay></video>
       <div id="bshotno" hidden></div>
       <div id="bcount"></div>
@@ -139,6 +148,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     <div><div class="label">Đếm ngược</div><div class="chips" id="c-timer"></div></div>
     <div><div class="label">Chụp bằng cử chỉ</div><div class="chips" id="c-gesture"></div></div>
     <div><div class="label">In ngay sau khi chụp</div><div class="chips" id="c-print"></div></div>
+    <p class="inapp" id="inapp2" hidden></p>
     <button id="bshoot">Bắt đầu chụp 4 tấm</button>
     <div class="bactions" id="bactions" hidden>
       <a id="bsave" href="#" download="NangMai.jpg">Tải ảnh về</a>
@@ -157,6 +167,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
   <h1>Chụp ảnh Nắng Mai</h1>
   <p>Đứng trước camera rồi giơ tay chữ V hoặc ngón cái (hoặc bấm nút Chụp). Ảnh của bạn hiện ngay trong phông "Nắng Mai hôm nay" của trường.</p>
   <button id="go">Bật camera</button>
+  <p class="inapp" id="inapp1" hidden></p>
   <p id="err"></p>
 </div>
 <script>
@@ -184,9 +195,9 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     if (!soundOn && synth) synth.cancel();
   };
   // ---- photo booth: 4 shots with a spoken countdown, composed into a strip with the school logo ----
-  const BO = { layout: 'backdrop', frame: 'nang', filter: 'natural', sticker: 'none', timer: 3, shots: [], busy: false, url: null, blob: null };
-  const LAYOUTS = [['backdrop', 'Phông Nắng Mai hôm nay'], ['strip', 'Dải 4 ảnh dọc'], ['grid', 'Lưới 2 × 2']];
-  const need = () => BO.layout === 'backdrop' ? 1 : 4;
+  const BO = { layout: 'cutout', frame: 'nang', filter: 'natural', sticker: 'none', timer: 3, shots: [], busy: false, url: null, blob: null };
+  const LAYOUTS = [['cutout', 'Đứng cạnh robot (tách nền)'], ['backdrop', 'Khung ảnh trong phông'], ['strip', 'Dải 4 ảnh dọc'], ['grid', 'Lưới 2 × 2']];
+  const need = () => BO.layout === 'backdrop' || BO.layout === 'cutout' ? 1 : 4;
   const FRAMES = {
     nang:  { name: 'Vàng nắng', bg: '#FFD54A', fg: '#3a2a00', sub: '#7a5a00' },
     hong:  { name: 'Hồng phấn', bg: '#F8D2DC', fg: '#6b2440', sub: '#9a4d66' },
@@ -235,16 +246,20 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
   chips('c-timer', TIMERS, 'timer');
 
   function layoutUI() {
-    const framed = BO.layout === 'backdrop';
+    const framed = BO.layout === 'backdrop', cut = BO.layout === 'cutout', single = framed || cut;
     bstage.classList.toggle('framed', framed);
+    bstage.classList.toggle('cut', cut);
     const bf = document.getElementById('bframe');
     if (framed && !bf.getAttribute('src')) bf.src = document.getElementById('khung').src;
     bf.hidden = !framed;
-    document.getElementById('g-frame').hidden = framed;
-    document.getElementById('bsub').textContent = framed
-      ? 'Ảnh của bạn hiện ngay trong phông "Nắng Mai hôm nay" của trường.'
+    document.getElementById('bcut').hidden = !cut;
+    document.getElementById('g-frame').hidden = single;
+    document.getElementById('bsub').textContent = cut
+      ? 'Tách nền phía sau, bạn đứng ngay cạnh robot trong phông "Nắng Mai hôm nay".'
+      : framed ? 'Ảnh của bạn nằm trong khung ảnh trên phông "Nắng Mai hôm nay".'
       : 'Chụp 4 tấm liền nhau rồi ghép thành dải ảnh có logo trường.';
-    if (!BO.busy) bshoot.textContent = framed ? 'Chụp ảnh' : 'Bắt đầu chụp 4 tấm';
+    if (!BO.busy) bshoot.textContent = single ? 'Chụp ảnh' : 'Bắt đầu chụp 4 tấm';
+    if (cut && bvideo.srcObject && SEG.state === 'idle') loadSegmenter(); // srcObject first: SEG is declared further down
   }
   layoutUI();
   function resetShots() {
@@ -267,6 +282,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     } catch {}
   }
   function grab() {
+    if (BO.layout === 'cutout') return grabCutout(true);
     // centre 4:3 crop of the camera, mirrored like the preview
     const vw = bvideo.videoWidth || 640, vh = bvideo.videoHeight || 480;
     let sw = vw, sh = vh;
@@ -293,7 +309,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
       if (!BO.busy) break;
       bcount.textContent = ''; speak(n === N && N > 1 ? 'Last one, cheese!' : 'Cheese!');
       await wait(250);
-      const shot = grab(); shutter();
+      const shot = await grab(); shutter();
       bflash.classList.add('on'); setTimeout(() => bflash.classList.remove('on'), 90);
       BO.shots.push(shot);
       const th = new Image(); th.src = shot.toDataURL('image/jpeg', 0.6); th.alt = `Tấm ${n}`; bthumbs.appendChild(th);
@@ -304,7 +320,9 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
       await compose();
       speak('Beautiful! Here are your photos.');
       bstage.hidden = true; bshoot.hidden = true; bactions.hidden = false;
-      if (BO.print !== 'off') setTimeout(printPhoto, 900);
+      const bp = document.getElementById('bprint');
+      bp.classList.add('main'); bp.textContent = 'In ảnh ngay';
+      if (BO.print !== 'off' && !INAPP) setTimeout(() => { try { window.print(); } catch {} }, 900); // works where the browser allows it; the button always does
     }
     BO.busy = false; bshoot.disabled = false;
   }
@@ -380,6 +398,17 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     try { await Promise.race([document.fonts.load('700 40px "Be Vietnam Pro"'), wait(1500)]); } catch {}
     const F = FRAMES[BO.frame], fl = FILTERS[BO.filter], strip = BO.layout === 'strip';
     const d0 = new Date(), dateStr = `${String(d0.getDate()).padStart(2, '0')}.${String(d0.getMonth() + 1).padStart(2, '0')}.${d0.getFullYear()}`;
+    if (BO.layout === 'cutout') {
+      const c = document.createElement('canvas'); c.width = 1484; c.height = 1060;
+      const x = c.getContext('2d');
+      x.drawImage(document.getElementById('khung'), 0, 0, 1484, 1060);
+      const person = filtered(BO.shots[0], { p: Object.fromEntries(Object.entries(fl.p).filter(([k]) => k !== 'glow')) });
+      drawPerson(x, person);
+      x.font = '600 24px "Be Vietnam Pro", system-ui, sans-serif'; x.textAlign = 'right';
+      x.lineWidth = 6; x.strokeStyle = 'rgba(20,40,90,.85)'; x.strokeText(dateStr, 1456, 1040);
+      x.fillStyle = '#fff'; x.fillText(dateStr, 1456, 1040);
+      return finish(c, dateStr, d0);
+    }
     if (BO.layout === 'backdrop') {
       const kh = document.getElementById('khung');
       const c = document.createElement('canvas'); c.width = 1484; c.height = 1060;
@@ -443,6 +472,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     if (BO.url) URL.revokeObjectURL(BO.url);
     BO.blob = blob; BO.url = URL.createObjectURL(blob);
     bresult.src = BO.url; bresult.hidden = false;
+    preparePrint();
     const save = document.getElementById('bsave');
     save.href = BO.url; save.download = `NangMai-${date.replace(/\./g, '-')}-${d.getHours()}${String(d.getMinutes()).padStart(2, '0')}.jpg`;
     const share = document.getElementById('bshare');
@@ -455,7 +485,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
   // ---- printing: the finished photo on 10×15 cm photo paper or A4; strips print two side by side, ready to cut ----
   BO.print = 'photo';
   chips('c-print', [['photo', 'Giấy ảnh 10×15'], ['a4', 'Giấy A4'], ['off', 'Không in']], 'print');
-  async function printPhoto() {
+  function preparePrint() {
     if (!BO.url) return;
     const strip = BO.layout === 'strip', a4 = BO.print === 'a4';
     const p1 = document.getElementById('print1'), p2 = document.getElementById('print2');
@@ -464,13 +494,103 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     document.getElementById('pagestyle').textContent = strip
       ? (a4 ? '@page { size: A4 portrait; margin: 10mm; }' : '@page { size: 10cm 15cm; margin: 0; }')
       : (a4 ? '@page { size: A4 landscape; margin: 10mm; }' : '@page { size: 15cm 10cm; margin: 0; }');
-    try { await p1.decode(); } catch {}
+  }
+  function printPhoto() {
+    if (!BO.url) return;
+    preparePrint();
+    // window.print() must run directly in the tap, without waiting, or Safari and some browsers ignore it
     try { window.print(); } catch {}
   }
   document.getElementById('bprint').onclick = printPhoto;
+  // apps like Zalo, Facebook, Messenger open links in their own browser, which cannot print or use the camera well
+  const INAPP = /FBAN|FBAV|FB_IAB|Instagram|Zalo|Line\/|MicroMessenger|TikTok|Messenger/i.test(navigator.userAgent);
+  if (INAPP) ['inapp1', 'inapp2'].forEach(id => {
+    const el = document.getElementById(id); el.hidden = false;
+    el.textContent = 'Trang đang mở trong ứng dụng (Zalo, Facebook...), nên không in được. Hãy bấm dấu ba chấm rồi chọn "Mở bằng trình duyệt" (Safari hoặc Chrome).';
+  });
+
+  const GMP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+  // ---- background removal: MediaPipe multiclass selfie segmenter (category 0 = background) ----
+  const SEG = { state: 'idle', seg: null, last: -1, small: null, lastRun: 0 };
+  // where the person stands in the backdrop: right of the robot, feet near the floor
+  const PLACE = { x: 900, y: 330, w: 584, h: 730 }; // portrait box, aspect 0.8
+  async function loadSegmenter() {
+    SEG.state = 'loading';
+    const hint = document.getElementById('bseghint'); hint.hidden = false; hint.textContent = 'Đang tải tách nền...';
+    try {
+      const vision = await import(GMP + '/vision_bundle.mjs');
+      const fs = await vision.FilesetResolver.forVisionTasks(GMP + '/wasm');
+      const opts = d => ({ baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite', delegate: d },
+                           runningMode: 'VIDEO', outputConfidenceMasks: true, outputCategoryMask: false });
+      try { SEG.seg = await vision.ImageSegmenter.createFromOptions(fs, opts('GPU')); }
+      catch { SEG.seg = await vision.ImageSegmenter.createFromOptions(fs, opts('CPU')); }
+      SEG.state = 'ready'; hint.hidden = true;
+    } catch (e) {
+      SEG.state = 'failed';
+      hint.textContent = 'Không tải được tách nền, đã chuyển sang khung ảnh.';
+      setTimeout(() => { hint.hidden = true; }, 5000);
+      if (BO.layout === 'cutout') { BO.layout = 'backdrop'; chips('c-layout', LAYOUTS, 'layout'); layoutUI(); }
+    }
+  }
+  // mirrored portrait crop of the camera, drawn onto a canvas of the given width
+  function cropFrame(width) {
+    const vw = bvideo.videoWidth || 640, vh = bvideo.videoHeight || 480, aspect = PLACE.w / PLACE.h;
+    let sh = vh, sw = vh * aspect; if (sw > vw) { sw = vw; sh = vw / aspect; }
+    const c = document.createElement('canvas'); c.width = width; c.height = Math.round(width / aspect);
+    const x = c.getContext('2d'); x.translate(c.width, 0); x.scale(-1, 1);
+    x.drawImage(bvideo, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, c.width, c.height);
+    return c;
+  }
+  // person on a transparent background; soft edge from the background confidence
+  let segTime = 0;
+  function cutout(frame) {
+    const r = SEG.seg.segmentForVideo(frame, segTime = Math.max(segTime + 1, performance.now()));
+    const masks = r.confidenceMasks || [];
+    const bg = masks[0]; if (!bg) return null;
+    const mw = bg.width, mh = bg.height, a = bg.getAsFloat32Array();
+    const m = document.createElement('canvas'); m.width = mw; m.height = mh;
+    const mx = m.getContext('2d'), md = mx.createImageData(mw, mh);
+    for (let i = 0; i < a.length; i++) {
+      const v = Math.min(1, Math.max(0, (0.75 - a[i]) / 0.5)); // background 0.75+ → clear, 0.25- → solid
+      md.data[i * 4 + 3] = v * 255;
+    }
+    mx.putImageData(md, 0, 0);
+    masks.forEach(k => k.close && k.close());
+    const out = document.createElement('canvas'); out.width = frame.width; out.height = frame.height;
+    const ox = out.getContext('2d');
+    ox.drawImage(frame, 0, 0);
+    ox.globalCompositeOperation = 'destination-in';
+    ox.imageSmoothingEnabled = true; ox.drawImage(m, 0, 0, out.width, out.height);
+    return out;
+  }
+  function grabCutout() {
+    const frame = cropFrame(720);
+    if (SEG.state !== 'ready') return frame; // no segmenter: plain photo in the person's spot
+    try { return cutout(frame) || frame; } catch { return frame; }
+  }
+  function drawPerson(x, person) {
+    x.save();
+    x.shadowColor = 'rgba(10,40,90,.35)'; x.shadowBlur = 18; x.shadowOffsetY = 6;
+    x.drawImage(person, PLACE.x, PLACE.y, PLACE.w, PLACE.h);
+    x.restore();
+  }
+  // live preview: backdrop plus the cut-out person, ~12 times a second
+  const bcut = document.getElementById('bcut'), bcx = bcut.getContext('2d');
+  let lastPerson = null;
+  function previewLoop(now) {
+    requestAnimationFrame(previewLoop);
+    if (BO.layout !== 'cutout' || bstage.hidden || !bvideo.srcObject || bvideo.readyState < 2) return;
+    if (now - SEG.lastRun < 80) return;
+    SEG.lastRun = now;
+    const frame = cropFrame(320);
+    if (SEG.state === 'ready') { try { lastPerson = cutout(frame) || lastPerson; } catch {} }
+    else lastPerson = frame;
+    bcx.drawImage(document.getElementById('khung'), 0, 0, 1484, 1060);
+    if (lastPerson) drawPerson(bcx, lastPerson);
+  }
+  requestAnimationFrame(previewLoop);
 
   // ---- gesture trigger: hold a V sign or a thumbs-up for a moment, a ring fills, then the countdown starts ----
-  const GMP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
   const G = { on: true, rec: null, ready: false, holdStart: 0, lastSeen: 0, kind: '', cool: 0, lastT: -1 };
   BO.gesture = 'on';
   chips('c-gesture', [['on', 'Bật'], ['off', 'Tắt']], 'gesture');
@@ -545,13 +665,14 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
       bvideo.style.filter = FILTERS[BO.filter].css;
       document.getElementById('start').hidden = true;
       if (!G.rec) loadGestures();
+      layoutUI();
     } catch (err) {
       document.getElementById('err').textContent = 'Không mở được camera. Hãy cho phép camera cho trang này rồi bấm lại. (' + (err.name || err) + ')';
     }
   };
 
   // ---- auto-update: reload into a newer version when one is published ----
-  const BUILD = '20261107103812';
+  const BUILD = '20261107104446';
   (async () => {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
