@@ -59,6 +59,27 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
   border-radius: 1.6% / 2.3%; outline: .6vw solid #fff; }
 #bshotno { position: absolute; top: 14px; left: 14px; padding: 6px 12px; border-radius: 999px;
   background: rgba(0,0,0,.55); color: #fff; font: 600 14px var(--font-body); }
+#printwrap { display: none; }
+@media print {
+  html, body { background: #fff !important; height: auto; }
+  body > *:not(#printwrap) { display: none !important; }
+  #printwrap { display: flex !important; position: fixed; inset: 0; align-items: center; justify-content: center; gap: 0; }
+  #printwrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  #printwrap.pair img { max-width: 50%; }
+}
+#bgesture {
+  position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 2;
+}
+#bgesture svg { width: clamp(120px, 22vw, 200px); height: auto; filter: drop-shadow(0 4px 14px rgba(0,0,0,.35)); }
+#bgesture .ring-bg { fill: rgba(0,0,0,.35); stroke: rgba(255,255,255,.35); }
+#bgesture .ring { fill: none; stroke: #FFC417; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; }
+#bgesture text { fill: #fff; font: 700 15px var(--font-body); }
+#bgesture .big { font: 700 40px var(--font-display); }
+#bghint {
+  position: absolute; z-index: 2; left: 50%; bottom: 14px; transform: translateX(-50%); white-space: nowrap;
+  padding: 8px 14px; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff; font: 600 14px var(--font-body);
+}
+#bghint.ok { background: #1f9d55; }
 #bflash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .35s; }
 #bflash.on { opacity: 1; transition: none; }
 #bthumbs { display: flex; gap: 8px; justify-content: center; min-height: 64px; }
@@ -92,6 +113,15 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
       <video id="bvideo" playsinline muted autoplay></video>
       <div id="bshotno" hidden></div>
       <div id="bcount"></div>
+      <div id="bgesture" hidden>
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="ring-bg" cx="60" cy="60" r="52" stroke-width="10"/>
+          <circle class="ring" id="bring" cx="60" cy="60" r="52" stroke-width="10" stroke-dasharray="326.7" stroke-dashoffset="326.7"/>
+          <text x="60" y="58" text-anchor="middle" class="big" id="bgicon">V</text>
+          <text x="60" y="84" text-anchor="middle" id="bglabel">Giữ yên...</text>
+        </svg>
+      </div>
+      <div id="bghint" hidden>Đang tải nhận diện cử chỉ...</div>
       <div id="bflash"></div>
     </div>
     <img id="bresult" hidden alt="Dải ảnh vừa chụp cùng Nắng Mai">
@@ -107,20 +137,25 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     <div><div class="label">Bộ lọc</div><div class="chips" id="c-filter"></div></div>
     <div><div class="label">Sticker</div><div class="chips" id="c-sticker"></div></div>
     <div><div class="label">Đếm ngược</div><div class="chips" id="c-timer"></div></div>
+    <div><div class="label">Chụp bằng cử chỉ</div><div class="chips" id="c-gesture"></div></div>
+    <div><div class="label">In ngay sau khi chụp</div><div class="chips" id="c-print"></div></div>
     <button id="bshoot">Bắt đầu chụp 4 tấm</button>
     <div class="bactions" id="bactions" hidden>
       <a id="bsave" href="#" download="NangMai.jpg">Tải ảnh về</a>
+      <button id="bprint">In ảnh</button>
       <button id="bshare" hidden>Chia sẻ</button>
       <button class="ghost" id="bagain">Chụp lại</button>
     </div>
     <button class="ghost" id="sound">Âm thanh: bật</button>
-    <p id="bhint">Ảnh chỉ nằm trên máy này, không gửi đi đâu. Trên iPad có thể chạm giữ vào ảnh rồi chọn "Lưu vào Ảnh".</p>
+    <p id="bhint">Ảnh chỉ nằm trên máy này, không gửi đi đâu. Khi in, chọn máy in và khổ giấy 10×15 cm (4×6 inch). Trên iPad có thể chạm giữ vào ảnh rồi chọn "Lưu vào Ảnh".</p>
   </div>
 </div>
+<div id="printwrap"><img id="print1" alt=""><img id="print2" alt="" hidden></div>
+<style id="pagestyle">@page { size: 15cm 10cm; margin: 0; }</style>
 <div id="start">
   <img class="cover" id="cover" alt="Phông Nắng Mai hôm nay">
   <h1>Chụp ảnh Nắng Mai</h1>
-  <p>Đứng trước camera, bấm chụp, và ảnh của bạn hiện ngay trong phông "Nắng Mai hôm nay" của trường.</p>
+  <p>Đứng trước camera rồi giơ tay chữ V hoặc ngón cái (hoặc bấm nút Chụp). Ảnh của bạn hiện ngay trong phông "Nắng Mai hôm nay" của trường.</p>
   <button id="go">Bật camera</button>
   <p id="err"></p>
 </div>
@@ -243,11 +278,12 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
     return c;
   }
   const SAY = { 1: 'One', 2: 'Two', 3: 'Three', 4: 'Four', 5: 'Five' };
-  bshoot.onclick = async () => {
+  async function startShoot(viaGesture) {
     if (BO.busy) return;
     try { audio && audio.resume && audio.resume(); } catch {}
     BO.busy = true; bshoot.disabled = true; resetShots(); bshoot.disabled = true;
     const N = need();
+    if (viaGesture) { speak('Nice pose!'); await wait(900); }
     speak(N === 1 ? 'Get ready! Big smile!' : 'Get ready! Four photos.'); await wait(1600);
     for (let n = 1; n <= N && BO.busy; n++) {
       bshotno.hidden = N === 1; bshotno.textContent = `Tấm ${n}/${N}`;
@@ -268,9 +304,11 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
       await compose();
       speak('Beautiful! Here are your photos.');
       bstage.hidden = true; bshoot.hidden = true; bactions.hidden = false;
+      if (BO.print !== 'off') setTimeout(printPhoto, 900);
     }
     BO.busy = false; bshoot.disabled = false;
-  };
+  }
+  bshoot.onclick = () => startShoot(false);
 
   // ---- image processing ----
   function filtered(src, f) {
@@ -414,6 +452,87 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
   }
 
 
+  // ---- printing: the finished photo on 10×15 cm photo paper or A4; strips print two side by side, ready to cut ----
+  BO.print = 'photo';
+  chips('c-print', [['photo', 'Giấy ảnh 10×15'], ['a4', 'Giấy A4'], ['off', 'Không in']], 'print');
+  async function printPhoto() {
+    if (!BO.url) return;
+    const strip = BO.layout === 'strip', a4 = BO.print === 'a4';
+    const p1 = document.getElementById('print1'), p2 = document.getElementById('print2');
+    p1.src = BO.url; p2.src = BO.url; p2.hidden = !strip;
+    document.getElementById('printwrap').classList.toggle('pair', strip);
+    document.getElementById('pagestyle').textContent = strip
+      ? (a4 ? '@page { size: A4 portrait; margin: 10mm; }' : '@page { size: 10cm 15cm; margin: 0; }')
+      : (a4 ? '@page { size: A4 landscape; margin: 10mm; }' : '@page { size: 15cm 10cm; margin: 0; }');
+    try { await p1.decode(); } catch {}
+    try { window.print(); } catch {}
+  }
+  document.getElementById('bprint').onclick = printPhoto;
+
+  // ---- gesture trigger: hold a V sign or a thumbs-up for a moment, a ring fills, then the countdown starts ----
+  const GMP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+  const G = { on: true, rec: null, ready: false, holdStart: 0, lastSeen: 0, kind: '', cool: 0, lastT: -1 };
+  BO.gesture = 'on';
+  chips('c-gesture', [['on', 'Bật'], ['off', 'Tắt']], 'gesture');
+  const bgesture = document.getElementById('bgesture'), bring = document.getElementById('bring');
+  const bghint = document.getElementById('bghint'), bgicon = document.getElementById('bgicon'), bglabel = document.getElementById('bglabel');
+  const RING = 326.7, HOLD_MS = 700;
+  async function loadGestures() {
+    bghint.hidden = false; bghint.textContent = 'Đang tải nhận diện cử chỉ...';
+    try {
+      const vision = await import(GMP + '/vision_bundle.mjs');
+      const fs = await vision.FilesetResolver.forVisionTasks(GMP + '/wasm');
+      const opts = d => ({ baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task', delegate: d },
+                           runningMode: 'VIDEO', numHands: 2 });
+      try { G.rec = await vision.GestureRecognizer.createFromOptions(fs, opts('GPU')); }
+      catch { G.rec = await vision.GestureRecognizer.createFromOptions(fs, opts('CPU')); }
+      G.ready = true; showHint();
+      requestAnimationFrame(gestureLoop);
+    } catch (e) {
+      bghint.textContent = 'Không tải được nhận diện cử chỉ, hãy bấm nút Chụp.';
+      setTimeout(() => { bghint.hidden = true; }, 5000);
+    }
+  }
+  const waitingForPose = () => BO.gesture === 'on' && G.ready && !BO.busy && bresult.hidden && !bstage.hidden;
+  function showHint() {
+    bghint.classList.remove('ok');
+    bghint.hidden = !(BO.gesture === 'on' && G.ready) || BO.busy || !bresult.hidden;
+    bghint.textContent = 'Giơ tay chữ V hoặc ngón cái để chụp';
+  }
+  function setRing(p) { bring.setAttribute('stroke-dashoffset', String(RING * (1 - Math.max(0, Math.min(1, p))))); }
+  function gestureLoop(now) {
+    requestAnimationFrame(gestureLoop);
+    if (!waitingForPose()) { bgesture.hidden = true; G.holdStart = 0; showHint(); return; }
+    if (now - (G.lastRun || 0) < 90 || bvideo.readyState < 2 || bvideo.currentTime === G.lastT) return;
+    G.lastRun = now; G.lastT = bvideo.currentTime;
+    if (now < G.cool) return;
+    let found = '';
+    try {
+      const r = G.rec.recognizeForVideo(bvideo, now);
+      for (const hand of r.gestures || []) {
+        const top = hand && hand[0];
+        if (top && top.score > 0.6 && (top.categoryName === 'Victory' || top.categoryName === 'Thumb_Up')) { found = top.categoryName; break; }
+      }
+    } catch { return; }
+    if (found) {
+      if (!G.holdStart) { G.holdStart = now; G.kind = found; }
+      G.lastSeen = now;
+      const p = (now - G.holdStart) / HOLD_MS;
+      bgesture.hidden = false; bghint.hidden = true;
+      bgicon.textContent = found === 'Victory' ? 'V' : '👍';
+      bglabel.textContent = p >= 1 ? 'Chụp nào!' : 'Giữ yên...';
+      setRing(p);
+      if (p >= 1) {
+        G.holdStart = 0; G.cool = now + 1500;
+        bghint.hidden = false; bghint.classList.add('ok'); bghint.textContent = 'Đã nhận cử chỉ, chuẩn bị chụp!';
+        if (navigator.vibrate) try { navigator.vibrate(60); } catch {}
+        setTimeout(() => { bgesture.hidden = true; startShoot(true); }, 450);
+      }
+    } else if (G.holdStart && now - G.lastSeen > 300) {
+      G.holdStart = 0; setRing(0); bgesture.hidden = true; showHint();
+    }
+  }
+
   // ---- start: the first tap unlocks sound and voice (needed on iPad), then the camera opens ----
   document.getElementById('cover').src = document.getElementById('khung').src;
   document.getElementById('go').onclick = async () => {
@@ -425,13 +544,14 @@ button:focus-visible, a:focus-visible { outline: 3px solid #FFC417; outline-offs
       bvideo.srcObject = stream; await bvideo.play().catch(() => {});
       bvideo.style.filter = FILTERS[BO.filter].css;
       document.getElementById('start').hidden = true;
+      if (!G.rec) loadGestures();
     } catch (err) {
       document.getElementById('err').textContent = 'Không mở được camera. Hãy cho phép camera cho trang này rồi bấm lại. (' + (err.name || err) + ')';
     }
   };
 
   // ---- auto-update: reload into a newer version when one is published ----
-  const BUILD = '20261107103102';
+  const BUILD = '20261107103617';
   (async () => {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
